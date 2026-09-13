@@ -28,6 +28,12 @@
   h1{margin:0 0 8px;font-size:34px;color:#f5d76e} p{line-height:1.5;color:#d8e0ed}
   #play{position:static;padding:16px 30px;border-radius:14px;background:#6d46b5;font-size:18px;font-weight:700;margin-top:10px;touch-action:manipulation;cursor:pointer}
   #play:active{background:#8257d6}
+  #continue{display:none;width:100%;padding:16px 30px;border-radius:14px;background:#3c8f6a;font-size:18px;font-weight:700;margin-top:10px;touch-action:manipulation;cursor:pointer}
+  #continue:active{background:#4dab80}
+  #saveinfo{display:none;color:#9fd8b8;font-size:14px;margin:10px 0 0}
+  /* Small "Progress saved" note that fades in and out near the top of the screen. */
+  #saved{position:absolute;left:50%;top:118px;transform:translateX(-50%);background:rgba(10,17,30,.88);border:1px solid #6fbf8f;color:#bff0d0;border-radius:11px;padding:6px 13px;font-size:13px;opacity:0;transition:opacity .35s;pointer-events:none;z-index:6}
+  #saved.show{opacity:1}
   #win{position:absolute;inset:0;background:#091020ed;color:white;display:none;align-items:center;justify-content:center;text-align:center;padding:25px}
   #win .card{max-width:500px;background:#18243a;border:1px solid #f5d76e;border-radius:22px;padding:30px}
 </style>
@@ -50,6 +56,7 @@ window.onerror=function(msg,src,line){
   <div class="panel">❤️ <span id="hp">5</span> &nbsp; ⚡ Power: <span id="power">0</span> &nbsp; 🌙 <span id="area">Moonwood</span></div>
 </div>
 <div id="message"><b id="mtitle"></b><span id="mtext"></span></div>
+<div id="saved">✓ Progress saved</div>
 
 <div id="controls">
   <button class="d" id="up">▲</button><button class="d" id="left">◀</button>
@@ -63,7 +70,9 @@ window.onerror=function(msg,src,line){
     <p><b>The Lost Star</b></p>
     <p>The Moonwood forest has gone dark. Three Star Shards were scattered across the forest. Find them and return to the ancient Star Gate before the night ends.</p>
     <p>Explore with the arrow buttons. Press <b>ACTION</b> near objects, creatures, and characters. Discovering creatures makes you stronger. When a monster blocks your path, ACTION becomes your attack.</p>
+    <button id="continue">▶ Continue</button>
     <button id="play">Begin Adventure</button>
+    <p id="saveinfo"></p>
     <p id="nojs" style="color:#ff9a9a;font-weight:700;font-size:14px;margin-top:16px">⚠️ JavaScript is not running here, so the button will do nothing. Open this file directly in Safari or Chrome instead of a file preview.</p>
   </div>
 </div>
@@ -157,11 +166,104 @@ document.getElementById('ability').addEventListener('pointerdown',e=>{e.preventD
 // Begin Adventure is deliberately left alone so its tap keeps working.
 document.addEventListener('selectstart',e=>e.preventDefault());
 document.addEventListener('contextmenu',e=>e.preventDefault());
-function startGame(){if(started)return;started=true;document.getElementById('start').style.display='none';say('A new adventure','Luna is waiting in the forest. Find the three Star Shards and discover what is waking beneath Moonwood.');}
+/* ---------------------------------------------------------------------------
+   SAVING YOUR PROGRESS
+
+   The game keeps one save in the browser's localStorage, which is a small
+   notepad the browser remembers for this site. It stays on THIS phone in THIS
+   browser - it does not follow you to another device, and clearing your browser
+   data erases it.
+
+   Every localStorage call is wrapped in try/catch because a browser in private
+   mode is allowed to refuse, and a refusal must never stop the game.
+--------------------------------------------------------------------------- */
+const SAVE_KEY='moonwood-save-v1';
+
+function readSave(){
+ try{
+   const raw=localStorage.getItem(SAVE_KEY);
+   if(!raw)return null;
+   const d=JSON.parse(raw);
+   return (d&&d.v===1)?d:null;   // ignore saves from a different version
+ }catch(e){return null}
+}
+
+function saveGame(){
+ const data={
+   v:1,
+   x:p.x,y:p.y,hp:p.hp,maxHp:p.maxHp,shards:p.shards,xp:p.xp,level:p.level,power:p.power,
+   abilities:p.abilities.slice(),
+   got:shards.map(s=>s.got),
+   discovered:[...discovered],
+   defeated:[...defeated],
+   monsterHp:monsters.map(m=>m.hp)
+ };
+ try{localStorage.setItem(SAVE_KEY,JSON.stringify(data));showSaved();}catch(e){}
+}
+
+function clearSave(){try{localStorage.removeItem(SAVE_KEY)}catch(e){}}
+
+function applySave(d){
+ p.x=d.x;p.y=d.y;p.hp=d.hp;p.maxHp=d.maxHp;p.shards=d.shards;
+ p.xp=d.xp;p.level=d.level;p.power=d.power;p.abilities=d.abilities.slice();
+ shards.forEach((s,i)=>s.got=d.got[i]);
+ discovered=new Set(d.discovered);
+ defeated=new Set(d.defeated);
+ monsters.forEach((m,i)=>m.hp=d.monsterHp[i]);
+}
+
+// The little "Progress saved" note. It fades itself back out after a moment.
+let savedTimer=null;
+function showSaved(){
+ const el=document.getElementById('saved');
+ el.classList.add('show');
+ clearTimeout(savedTimer);
+ savedTimer=setTimeout(()=>el.classList.remove('show'),1600);
+}
+
+/* ---------------------------------------------------------------------------
+   STARTING THE GAME
+   startGame(true)  = continue from the save
+   startGame(false) = fresh adventure, and the old save is thrown away
+--------------------------------------------------------------------------- */
+function startGame(continuing){
+ if(started)return;
+ if(continuing){
+   const d=readSave();
+   if(d)applySave(d); else continuing=false;   // save vanished? just start fresh
+ }else{
+   clearSave();
+ }
+ started=true;
+ document.getElementById('start').style.display='none';
+ updateHUD();
+ if(continuing)say('Welcome back','You have '+p.shards+' of 3 Star Shards. Your adventure continues!');
+ else say('A new adventure','Luna is waiting in the forest. Find the three Star Shards and discover what is waking beneath Moonwood.');
+}
+
+// Fill in the start card: only offer Continue when there is really a save to load.
+const savedGame=readSave();
+if(savedGame){
+ document.getElementById('continue').style.display='block';
+ document.getElementById('play').textContent='Start Over';
+ const info=document.getElementById('saveinfo');
+ info.textContent='Saved game: '+savedGame.shards+' of 3 shards, level '+savedGame.level+'. "Start Over" erases it.';
+ info.style.display='block';
+}
+
 const playBtn=document.getElementById('play');
-['click','pointerup','touchend'].forEach(ev=>playBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();startGame();}));
-document.getElementById('start').addEventListener('click',startGame);
-document.getElementById('restart').onclick=()=>location.reload();
+const contBtn=document.getElementById('continue');
+// Begin Adventure / Start Over always begins a brand new game.
+['click','pointerup','touchend'].forEach(ev=>playBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();startGame(false);}));
+// Continue picks the save back up.
+['click','pointerup','touchend'].forEach(ev=>contBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();startGame(true);}));
+// Tapping anywhere else on the start screen is the safety net from the original
+// bug. It must NOT be wired straight to startGame, because a listener hands the
+// click event to the first argument, and an event object counts as "true" - which
+// would silently mean "continue". The wrapper keeps that from happening.
+document.getElementById('start').addEventListener('click',()=>startGame(!!readSave()));
+// Play Again after winning starts a clean adventure, so the finished save goes.
+document.getElementById('restart').onclick=()=>{clearSave();location.reload()};
 
 function say(title,text){
  const m=document.getElementById('message');document.getElementById('mtitle').textContent=title;
@@ -186,6 +288,7 @@ function baseAction(){
      if(p.shards===1)say('The first Star Shard','Its light reveals a strange mark on the ancient trees. Something is watching from the shadows.');
      else if(p.shards===2)say('The second Star Shard','The shard hums like a distant song. Luna may know why the creatures are gathering.');
      else say('The final Star Shard','All three shards are glowing. Return to the Star Gate!');
+     saveGame();
      return;
    }
  }
@@ -193,6 +296,7 @@ function baseAction(){
    if(dist(p,c)<80&&!discovered.has(c.id)){
      discovered.add(c.id);p.xp+=4;p.power+=2;p.maxHp++;p.hp=p.maxHp;p.abilities.push(c.ability);updateHUD();
      say('Creature discovered: '+c.name,c.desc+' Its spirit joins you! New ability: '+c.ability+'. Power +2 and maximum health +1.');
+     saveGame();
      return;
    }
  }
@@ -204,7 +308,7 @@ function baseAction(){
    return;
  }
  if(dist(p,gate)<110){
-   if(p.shards===3){won=true;document.getElementById('win').style.display='flex';}
+   if(p.shards===3){won=true;clearSave();document.getElementById('win').style.display='flex';}
    else say('The Star Gate','The gate needs all three Star Shards. Keep exploring!');
  }
 }
@@ -230,7 +334,7 @@ function battleAction(){
      defeated.add(m.id);p.xp+=m.xp;
      if(p.xp>=p.level*20){p.xp-=p.level*20;p.level++;p.maxHp++;p.hp=p.maxHp;say('Level up!','You reached level '+p.level+' and feel stronger.');}
      else say('Victory!','You defeated the '+m.name+' and earned '+m.xp+' XP.');
-     battle=null;paused=false;updateHUD();return;
+     battle=null;paused=false;updateHUD();saveGame();return;
    }
    battle.playerTurn=false;
    setTimeout(()=>{
@@ -240,6 +344,7 @@ function battleAction(){
      if(p.hp<=0){
        p.hp=p.maxHp;battle=null;paused=false;p.x=150;p.y=700;
        say('You fainted','Luna carried you safely back to the forest entrance. Your adventure continues!');
+       saveGame();
      }else{
        battle.playerTurn=true;say('Your turn','ACTION to attack '+m.name+'!');
      }
@@ -257,8 +362,8 @@ function useAbility(){
  else if(ability==='Tide Heal'){p.hp=Math.min(p.maxHp,p.hp+4);say('Tide Heal','Healing water restores 4 HP.');}
  else if(ability==='Radiant Burst'){damage=18+p.power;m.hp=Math.max(0,m.hp-damage);say('Radiant Burst','Golden light hits '+m.name+' for '+damage+' damage!');}
  updateHUD();
- if(m.hp<=0){defeated.add(m.id);p.xp+=m.xp;if(p.xp>=p.level*20){p.xp-=p.level*20;p.level++;p.maxHp++;p.hp=p.maxHp;say('Level up!','You reached level '+p.level+' and feel stronger.');}battle=null;paused=false;return;}
- battle.playerTurn=false;setTimeout(()=>{if(!battle)return;const dmg=m.attack+Math.floor(Math.random()*3);p.hp=Math.max(0,p.hp-dmg);updateHUD();if(p.hp<=0){p.hp=p.maxHp;battle=null;paused=false;p.x=150;p.y=700;say('You fainted','Luna carried you safely back to the forest entrance. Your adventure continues!');}else{battle.playerTurn=true;say('Your turn',p.abilities.length?'ACTION to attack or ABILITY to use your creature power.':'ACTION to attack '+m.name+'!');}},550);
+ if(m.hp<=0){defeated.add(m.id);p.xp+=m.xp;if(p.xp>=p.level*20){p.xp-=p.level*20;p.level++;p.maxHp++;p.hp=p.maxHp;say('Level up!','You reached level '+p.level+' and feel stronger.');}battle=null;paused=false;saveGame();return;}
+ battle.playerTurn=false;setTimeout(()=>{if(!battle)return;const dmg=m.attack+Math.floor(Math.random()*3);p.hp=Math.max(0,p.hp-dmg);updateHUD();if(p.hp<=0){p.hp=p.maxHp;battle=null;paused=false;p.x=150;p.y=700;say('You fainted','Luna carried you safely back to the forest entrance. Your adventure continues!');saveGame();}else{battle.playerTurn=true;say('Your turn',p.abilities.length?'ACTION to attack or ABILITY to use your creature power.':'ACTION to attack '+m.name+'!');}},550);
 }
 
 function update(){
