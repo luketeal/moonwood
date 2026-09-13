@@ -131,6 +131,11 @@ function bind(id,k){
  const b=document.getElementById(id);
  b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=true});
  ['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,e=>{e.preventDefault();keys[k]=false}));
+ // A phone decides whether to show the magnifying glass the moment a finger lands,
+ // so we have to say "no thanks" on the touch events too, not just the ones above.
+ // {passive:false} is what gives preventDefault permission to work here.
+ b.addEventListener('touchstart',e=>{e.preventDefault();keys[k]=true},{passive:false});
+ ['touchend','touchcancel'].forEach(ev=>b.addEventListener(ev,e=>{e.preventDefault();keys[k]=false},{passive:false}));
 }
 bind('up','up');bind('down','down');bind('left','left');bind('right','right');
 
@@ -145,6 +150,13 @@ addEventListener('keyup',e=>{
 });
 document.getElementById('act').addEventListener('pointerdown',e=>{e.preventDefault();action()});
 document.getElementById('ability').addEventListener('pointerdown',e=>{e.preventDefault();useAbility()});
+// Same magnifying-glass fix for the two round buttons. These lines only block the
+// magnifier; the pointerdown lines above still do the real work, so nothing fires twice.
+['act','ability'].forEach(id=>document.getElementById(id).addEventListener('touchstart',e=>e.preventDefault(),{passive:false}));
+// Belt and braces: never start a text selection or a copy menu anywhere in the game.
+// Begin Adventure is deliberately left alone so its tap keeps working.
+document.addEventListener('selectstart',e=>e.preventDefault());
+document.addEventListener('contextmenu',e=>e.preventDefault());
 function startGame(){if(started)return;started=true;document.getElementById('start').style.display='none';say('A new adventure','Luna is waiting in the forest. Find the three Star Shards and discover what is waking beneath Moonwood.');}
 const playBtn=document.getElementById('play');
 ['click','pointerup','touchend'].forEach(ev=>playBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();startGame();}));
