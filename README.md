@@ -26,6 +26,28 @@ One-time setup, done on github.com:
 - `index.html` — the whole game: layout, art, and code, all in one file
 - `.nojekyll` — tells GitHub to publish the file exactly as written
 
+## Saving progress
+
+The game saves itself automatically whenever something is earned - a shard picked
+up, a creature discovered, a monster beaten, a level gained - and shows a short
+"Progress saved" note when it does.
+
+Next time the game is opened there are two buttons:
+
+- **Continue** picks up where he left off
+- **Start Over** begins a fresh adventure and erases the save
+
+Winning the game also clears the save, so the next visit starts clean.
+
+Two things worth knowing:
+
+- The save lives in **that browser on that phone**. It will not follow him to a
+  tablet or a different browser, and clearing browser data erases it. Saves that
+  follow you between devices need an account and a server, which is a much
+  bigger project.
+- Private browsing mode may refuse to save. The game still plays normally, it
+  just will not remember anything.
+
 ## Editing the game
 
 Everything is in `index.html`. Some easy things to change:
