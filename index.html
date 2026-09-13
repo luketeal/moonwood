@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Moonwood: The Lost Star</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101827;font-family:system-ui,-apple-system,sans-serif}
+  body{display:flex;align-items:center;justify-content:center}
+  #wrap{position:relative;width:100vw;height:100vh;height:100dvh;max-width:900px;max-height:700px;background:#172235;overflow:hidden}
+  #err{display:none;position:absolute;top:0;left:0;right:0;z-index:99;background:#b3323c;color:#fff;font-size:12px;padding:8px;font-family:monospace}
+  canvas{width:100%;height:100%;display:block;image-rendering:auto}
+  #hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;pointer-events:none;color:white;text-shadow:0 2px 3px #000}
+  .panel{background:rgba(10,17,30,.72);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:8px 11px;font-size:14px}
+  #message{position:absolute;left:50%;bottom:24%;transform:translateX(-50%);width:min(86%,520px);background:rgba(8,14,25,.9);color:#fff;border:1px solid #8193ad;border-radius:15px;padding:14px 17px;text-align:center;display:none;font-size:16px}
+  #message b{display:block;margin-bottom:5px;color:#f5d76e}
+  #controls{position:absolute;left:18px;bottom:18px;width:170px;height:150px}
+  button{border:0;color:#fff;background:rgba(15,25,43,.78);border:1px solid rgba(255,255,255,.22);box-shadow:0 4px 10px #0007;touch-action:none}
+  .d{position:absolute;width:54px;height:54px;border-radius:16px;font-size:25px}
+  #up{left:58px;top:0} #left{left:0;top:54px} #down{left:58px;top:54px} #right{left:116px;top:54px}
+  #ability{position:absolute;right:118px;bottom:48px;width:72px;height:58px;border-radius:16px;font-weight:700;font-size:12px;background:rgba(55,126,130,.85)}
+  #act{position:absolute;right:22px;bottom:35px;width:82px;height:82px;border-radius:50%;font-weight:700;font-size:15px;background:rgba(112,69,178,.85)}
+  #start{position:absolute;inset:0;background:linear-gradient(#111b30ee,#0b1020f2);color:white;display:flex;overflow:auto;-webkit-overflow-scrolling:touch;text-align:center;padding:25px}
+  #card{margin:auto;max-width:520px;background:#18243a;border:1px solid #60708c;border-radius:22px;padding:28px;box-shadow:0 15px 50px #0008}
+  h1{margin:0 0 8px;font-size:34px;color:#f5d76e} p{line-height:1.5;color:#d8e0ed}
+  #play{position:static;padding:16px 30px;border-radius:14px;background:#6d46b5;font-size:18px;font-weight:700;margin-top:10px;touch-action:manipulation;cursor:pointer}
+  #play:active{background:#8257d6}
+  #win{position:absolute;inset:0;background:#091020ed;color:white;display:none;align-items:center;justify-content:center;text-align:center;padding:25px}
+  #win .card{max-width:500px;background:#18243a;border:1px solid #f5d76e;border-radius:22px;padding:30px}
+</style>
+<script>
+window.onerror=function(msg,src,line){
+  var d=document.getElementById('err');
+  if(d){d.style.display='block';d.textContent='Script error: '+msg+'  (line '+line+')';}
+  return false;
+};
+</script>
+</head>
+<body>
+<div id="wrap">
+<div id="err"></div>
+<canvas id="game"></canvas>
+<div id="hud">
+<div id="storyhint" style="position:absolute;top:54px;left:10px;color:#dfe6f2;font-size:12px;text-shadow:0 2px 3px #000;pointer-events:none">Explore • Discover creatures • Battle monsters • Find the 3 shards</div>
+
+  <div class="panel">⭐ Shards: <span id="score">0</span>/3</div>
+  <div class="panel">❤️ <span id="hp">5</span> &nbsp; ⚡ Power: <span id="power">0</span> &nbsp; 🌙 <span id="area">Moonwood</span></div>
+</div>
+<div id="message"><b id="mtitle"></b><span id="mtext"></span></div>
+
+<div id="controls">
+  <button class="d" id="up">▲</button><button class="d" id="left">◀</button>
+  <button class="d" id="down">▼</button><button class="d" id="right">▶</button>
+</div>
+<button id="ability">ABILITY</button><button id="act">ACTION</button>
+
+<div id="start">
+  <div id="card">
+    <h1>🌙 Moonwood</h1>
+    <p><b>The Lost Star</b></p>
+    <p>The Moonwood forest has gone dark. Three Star Shards were scattered across the forest. Find them and return to the ancient Star Gate before the night ends.</p>
+    <p>Explore with the arrow buttons. Press <b>ACTION</b> near objects, creatures, and characters. Discovering creatures makes you stronger. When a monster blocks your path, ACTION becomes your attack.</p>
+    <button id="play">Begin Adventure</button>
+    <p id="nojs" style="color:#ff9a9a;font-weight:700;font-size:14px;margin-top:16px">⚠️ JavaScript is not running here, so the button will do nothing. Open this file directly in Safari or Chrome instead of a file preview.</p>
+  </div>
+</div>
+<script>document.getElementById('nojs').style.display='none';</script>
+
+<div id="win">
+  <div class="card">
+    <h1>✨ You Saved Moonwood!</h1>
+    <p>You reunited the three Star Shards and restored the Star Gate. The forest glows again, and somewhere beyond the trees, a new adventure is waiting...</p>
+    <button id="restart" style="padding:13px 25px;border-radius:13px;background:#6d46b5;font-size:17px;font-weight:700">Play Again</button>
+  </div>
+</div>
+</div>
+
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+let W,H,dpr,started=false,won=false,paused=false;
+const world={w:2100,h:1400};
+const p={x:150,y:700,r:18,speed:3.1,hp:5,maxHp:5,shards:0,dir:{x:1,y:0},xp:0,level:1,power:0,abilities:[]};
+const keys={up:false,down:false,left:false,right:false};
+let battle=null, discovered=new Set(), defeated=new Set(), messageTimer=null;
+
+const shards=[
+ {x:520,y:270,got:false,name:'Dawn Shard'},
+ {x:1320,y:330,got:false,name:'River Shard'},
+ {x:1680,y:1040,got:false,name:'Moon Shard'}
+];
+
+const creatures=[
+ {id:'mossling',x:380,y:410,name:'Mossling',kind:'forest',desc:'A tiny leaf-covered creature that loves quiet places.',symbol:'🍃',ability:'Moss Shield'},
+ {id:'glimmercat',x:990,y:270,name:'Glimmercat',kind:'magic',desc:'A shy cat-like creature whose tail glows in moonlight.',symbol:'🐈',ability:'Glimmer Strike'},
+ {id:'brookfin',x:1240,y:820,name:'Brookfin',kind:'water',desc:'A cheerful little river creature with silver-blue scales.',symbol:'🐟',ability:'Tide Heal'},
+ {id:'sunmoth',x:1770,y:520,name:'Sunmoth',kind:'sky',desc:'A gentle moth that carries warm golden light.',symbol:'🦋',ability:'Radiant Burst'}
+];
+
+const monsters=[
+ {id:'thornback',x:650,y:460,name:'Thornback',kind:'beast',hp:18,maxHp:18,attack:5,xp:8,symbol:'🦔'},
+ {id:'shadowbat',x:1120,y:560,name:'Shadow Bat',kind:'night',hp:22,maxHp:22,attack:6,xp:11,symbol:'🦇'},
+ {id:'stonegolem',x:1510,y:760,name:'Stone Golem',kind:'guardian',hp:30,maxHp:30,attack:7,xp:15,symbol:'🗿'},
+ {id:'nightfox',x:1830,y:900,name:'Night Fox',kind:'shadow',hp:26,maxHp:26,attack:8,xp:18,symbol:'🦊'}
+];
+
+const rocks=[
+ [350,220,65],[760,180,80],[1040,250,60],[1510,220,75],[1900,500,60],
+ [300,1080,80],[700,1000,65],[1120,1180,90],[1580,1210,75],[930,720,70],
+ [1950,1080,65]
+];
+const trees=[];
+for(let i=0;i<95;i++){
+ let x=70+(i*263)%1950,y=70+(i*157)%1250;
+ if(Math.hypot(x-150,y-700)<190) continue;
+ trees.push({x,y,s:22+(i%3)*7});
+}
+const npc={x:870,y:560,r:19};
+
+const gate={x:1920,y:700,r:52};
+
+function resize(){
+ dpr=Math.min(devicePixelRatio||1,2);W=canvas.clientWidth*dpr;H=canvas.clientHeight*dpr;
+ canvas.width=W;canvas.height=H;ctx.setTransform(dpr,0,0,dpr,0,0);W=canvas.clientWidth;H=canvas.clientHeight;
+}
+addEventListener('resize',resize);resize();
+
+function bind(id,k){
+ const b=document.getElementById(id);
+ b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=true});
+ ['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,e=>{e.preventDefault();keys[k]=false}));
+}
+bind('up','up');bind('down','down');bind('left','left');bind('right','right');
+
+addEventListener('keydown',e=>{
+ if(e.key==='ArrowUp'||e.key==='w')keys.up=true;if(e.key==='ArrowDown'||e.key==='s')keys.down=true;
+ if(e.key==='ArrowLeft'||e.key==='a')keys.left=true;if(e.key==='ArrowRight'||e.key==='d')keys.right=true;
+ if(e.key===' '||e.key==='Enter')action();if(e.key==='q'||e.key==='Q')useAbility();
+});
+addEventListener('keyup',e=>{
+ if(e.key==='ArrowUp'||e.key==='w')keys.up=false;if(e.key==='ArrowDown'||e.key==='s')keys.down=false;
+ if(e.key==='ArrowLeft'||e.key==='a')keys.left=false;if(e.key==='ArrowRight'||e.key==='d')keys.right=false;
+});
+document.getElementById('act').addEventListener('pointerdown',e=>{e.preventDefault();action()});
+document.getElementById('ability').addEventListener('pointerdown',e=>{e.preventDefault();useAbility()});
+function startGame(){if(started)return;started=true;document.getElementById('start').style.display='none';say('A new adventure','Luna is waiting in the forest. Find the three Star Shards and discover what is waking beneath Moonwood.');}
+const playBtn=document.getElementById('play');
+['click','pointerup','touchend'].forEach(ev=>playBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();startGame();}));
+document.getElementById('start').addEventListener('click',startGame);
+document.getElementById('restart').onclick=()=>location.reload();
+
+function say(title,text){
+ const m=document.getElementById('message');document.getElementById('mtitle').textContent=title;
+ document.getElementById('mtext').textContent=text;m.style.display='block';
+ clearTimeout(messageTimer);messageTimer=setTimeout(()=>m.style.display='none',4500);
+}
+
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+
+function blocked(nx,ny){
+ if(nx<p.r+20||ny<p.r+20||nx>world.w-p.r-20||ny>world.h-p.r-20)return true;
+ for(const r of rocks) if(Math.hypot(nx-r[0],ny-r[1])<r[2]*.55+p.r)return true;
+ for(const t of trees) if(Math.hypot(nx-t.x,ny-t.y)<t.s*.55+p.r*.7)return true;
+ return false;
+}
+
+function baseAction(){
+ if(!started||won||battle)return;
+ for(const s of shards){
+   if(!s.got&&dist(p,s)<75){
+     s.got=true;p.shards++;p.xp+=5;updateHUD();
+     if(p.shards===1)say('The first Star Shard','Its light reveals a strange mark on the ancient trees. Something is watching from the shadows.');
+     else if(p.shards===2)say('The second Star Shard','The shard hums like a distant song. Luna may know why the creatures are gathering.');
+     else say('The final Star Shard','All three shards are glowing. Return to the Star Gate!');
+     return;
+   }
+ }
+ for(const c of creatures){
+   if(dist(p,c)<80&&!discovered.has(c.id)){
+     discovered.add(c.id);p.xp+=4;p.power+=2;p.maxHp++;p.hp=p.maxHp;p.abilities.push(c.ability);updateHUD();
+     say('Creature discovered: '+c.name,c.desc+' Its spirit joins you! New ability: '+c.ability+'. Power +2 and maximum health +1.');
+     return;
+   }
+ }
+ if(dist(p,npc)<90){
+   if(p.shards===0)say('Luna the Forest Keeper','The forest is changing. Three Star Shards were scattered when the Star Gate broke. Find them before the darkness reaches the meadow.');
+   else if(p.shards===1)say('Luna','You found one! Follow the old stone path toward the Whispering Grove. And watch for Thornbacks.');
+   else if(p.shards===2)say('Luna','Two shards! The creatures are gathering near the Star Meadow. I fear the broken gate has awakened something ancient.');
+   else say('Luna','You have all three. The gate is east of here. Restore the light, and Moonwood may finally be safe.');
+   return;
+ }
+ if(dist(p,gate)<110){
+   if(p.shards===3){won=true;document.getElementById('win').style.display='flex';}
+   else say('The Star Gate','The gate needs all three Star Shards. Keep exploring!');
+ }
+}
+
+function nearbyMonster(){
+ for(const m of monsters) if(!defeated.has(m.id)&&dist(p,m)<42)return m;
+ return null;
+}
+
+function beginBattle(m){
+ battle={m,playerTurn:true,flash:0};
+ paused=true;
+ say('⚔️ Battle!',m.name+' blocks your path! Press ACTION to attack.');
+}
+
+function battleAction(){
+ if(!battle)return;
+ const m=battle.m;
+ if(battle.playerTurn){
+   const damage=6+p.level*2+p.power+Math.floor(Math.random()*5);
+   m.hp=Math.max(0,m.hp-damage);battle.flash=8;
+   if(m.hp<=0){
+     defeated.add(m.id);p.xp+=m.xp;
+     if(p.xp>=p.level*20){p.xp-=p.level*20;p.level++;p.maxHp++;p.hp=p.maxHp;say('Level up!','You reached level '+p.level+' and feel stronger.');}
+     else say('Victory!','You defeated the '+m.name+' and earned '+m.xp+' XP.');
+     battle=null;paused=false;updateHUD();return;
+   }
+   battle.playerTurn=false;
+   setTimeout(()=>{
+     if(!battle)return;
+     const dmg=m.attack+Math.floor(Math.random()*3);
+     p.hp=Math.max(0,p.hp-dmg);updateHUD();
+     if(p.hp<=0){
+       p.hp=p.maxHp;battle=null;paused=false;p.x=150;p.y=700;
+       say('You fainted','Luna carried you safely back to the forest entrance. Your adventure continues!');
+     }else{
+       battle.playerTurn=true;say('Your turn','ACTION to attack '+m.name+'!');
+     }
+   },550);
+ }
+}
+
+function useAbility(){
+ if(!started||won)return;
+ if(!battle){if(!p.abilities.length){say('No abilities yet','Discover a creature to gain a special ability.');return;}say('Creature Powers',p.abilities.join(' • '));return;}
+ if(!battle.playerTurn){say('Wait','It is not your turn yet.');return;}
+ const m=battle.m,ability=p.abilities[p.abilities.length-1];let damage=0;
+ if(ability==='Moss Shield'){p.hp=Math.min(p.maxHp,p.hp+2);say('Moss Shield','Living moss protects you. You recover 2 HP.');}
+ else if(ability==='Glimmer Strike'){damage=12+p.level*2+p.power;m.hp=Math.max(0,m.hp-damage);say('Glimmer Strike','Moonlight hits '+m.name+' for '+damage+' damage!');}
+ else if(ability==='Tide Heal'){p.hp=Math.min(p.maxHp,p.hp+4);say('Tide Heal','Healing water restores 4 HP.');}
+ else if(ability==='Radiant Burst'){damage=18+p.power;m.hp=Math.max(0,m.hp-damage);say('Radiant Burst','Golden light hits '+m.name+' for '+damage+' damage!');}
+ updateHUD();
+ if(m.hp<=0){defeated.add(m.id);p.xp+=m.xp;if(p.xp>=p.level*20){p.xp-=p.level*20;p.level++;p.maxHp++;p.hp=p.maxHp;say('Level up!','You reached level '+p.level+' and feel stronger.');}battle=null;paused=false;return;}
+ battle.playerTurn=false;setTimeout(()=>{if(!battle)return;const dmg=m.attack+Math.floor(Math.random()*3);p.hp=Math.max(0,p.hp-dmg);updateHUD();if(p.hp<=0){p.hp=p.maxHp;battle=null;paused=false;p.x=150;p.y=700;say('You fainted','Luna carried you safely back to the forest entrance. Your adventure continues!');}else{battle.playerTurn=true;say('Your turn',p.abilities.length?'ACTION to attack or ABILITY to use your creature power.':'ACTION to attack '+m.name+'!');}},550);
+}
+
+function update(){
+ if(!started||won)return;
+ if(battle){return;}
+ let dx=(keys.right?1:0)-(keys.left?1:0),dy=(keys.down?1:0)-(keys.up?1:0);
+ if(dx||dy){
+   let len=Math.hypot(dx,dy);dx/=len;dy/=len;p.dir={x:dx,y:dy};
+   const nx=p.x+dx*p.speed,ny=p.y+dy*p.speed;
+   if(!blocked(nx,p.y))p.x=nx;if(!blocked(p.x,ny))p.y=ny;
+ }
+ const m=nearbyMonster();
+ if(m) beginBattle(m);
+ updateHUD();
+}
+
+function updateHUD(){
+ document.getElementById('score').textContent=p.shards;
+ document.getElementById('hp').textContent=p.hp;
+ document.getElementById('power').textContent=p.power;
+ document.getElementById('area').textContent=p.x<650?'Moonwood':p.x<1250?'Whispering Grove':p.x<1700?'Star Meadow':'Starlight Gate';
+}
+
+function camera(){return{x:Math.max(0,Math.min(world.w-W,p.x-W/2)),y:Math.max(0,Math.min(world.h-H,p.y-H/2))}}
+
+function drawCreature(c){
+ ctx.save();ctx.translate(c.x,c.y);
+ ctx.fillStyle=c.kind==='forest'?'#75a85c':c.kind==='magic'?'#a87ed6':c.kind==='water'?'#6faed0':'#d7b65e';
+ ctx.beginPath();ctx.arc(0,0,17,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#172235';ctx.beginPath();ctx.arc(-6,-3,2.5,0,Math.PI*2);ctx.arc(6,-3,2.5,0,Math.PI*2);ctx.fill();
+ ctx.restore();
+}
+
+function drawMonster(m){
+ ctx.save();ctx.translate(m.x,m.y);
+ ctx.fillStyle='#7e4b67';ctx.beginPath();ctx.arc(0,0,24,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#f1d36a';ctx.beginPath();ctx.arc(-8,-4,3,0,Math.PI*2);ctx.arc(8,-4,3,0,Math.PI*2);ctx.fill();
+ ctx.restore();
+ // health bar
+ ctx.fillStyle='#111';ctx.fillRect(m.x-27,m.y-38,54,7);ctx.fillStyle='#df6d72';ctx.fillRect(m.x-25,m.y-36,50*(m.hp/m.maxHp),3);
+}
+
+function draw(){
+ ctx.clearRect(0,0,W,H);const c=camera();ctx.save();ctx.translate(-c.x,-c.y);
+ ctx.fillStyle='#182c25';ctx.fillRect(0,0,world.w,world.h);
+
+ // paths and water
+ ctx.strokeStyle='#263d35';ctx.lineWidth=105;ctx.beginPath();ctx.moveTo(0,720);ctx.quadraticCurveTo(520,590,900,690);ctx.quadraticCurveTo(1350,820,2100,690);ctx.stroke();
+ ctx.strokeStyle='#315f6b';ctx.lineWidth=70;ctx.beginPath();ctx.moveTo(1150,0);ctx.quadraticCurveTo(1190,390,1100,700);ctx.quadraticCurveTo(1040,1050,1250,1400);ctx.stroke();
+
+ for(let i=0;i<160;i++){let x=(i*137)%world.w,y=(i*79)%world.h;ctx.fillStyle=i%2?'#7b7ec2':'#d0a6d5';ctx.fillRect(x,y,3,3)}
+ for(const r of rocks){ctx.fillStyle='#53606b';ctx.beginPath();ctx.ellipse(r[0],r[1],r[2]*.65,r[2]*.45,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#687680';ctx.beginPath();ctx.ellipse(r[0]-r[2]*.15,r[1]-r[2]*.12,r[2]*.35,r[2]*.18,0,0,Math.PI*2);ctx.fill()}
+ for(const t of trees){ctx.fillStyle='#543d30';ctx.fillRect(t.x-5,t.y,t.s*.28,t.s*1.3);ctx.fillStyle='#1e4937';ctx.beginPath();ctx.arc(t.x,t.y,t.s,0,Math.PI*2);ctx.fill();ctx.fillStyle='#2e6248';ctx.beginPath();ctx.arc(t.x-8,t.y-8,t.s*.62,0,Math.PI*2);ctx.fill()}
+
+ // creatures
+ for(const cr of creatures)if(!discovered.has(cr.id))drawCreature(cr);
+ // shards
+ for(const s of shards)if(!s.got){const pulse=1+Math.sin(Date.now()/220+s.x)*.08;ctx.save();ctx.translate(s.x,s.y);ctx.rotate(Math.PI/4);ctx.shadowBlur=20;ctx.shadowColor='#f7df78';ctx.fillStyle='#f5d76e';ctx.fillRect(-11*pulse,-11*pulse,22*pulse,22*pulse);ctx.restore();}
+ // monsters
+ for(const m of monsters)if(!defeated.has(m.id))drawMonster(m);
+
+ // Luna
+ ctx.fillStyle='#d9a1d5';ctx.beginPath();ctx.arc(npc.x,npc.y,npc.r,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#352641';ctx.fillRect(npc.x-11,npc.y-3,22,18);ctx.fillStyle='#f5d76e';ctx.fillRect(npc.x-3,npc.y-24,6,8);
+
+ // gate
+ ctx.save();ctx.translate(gate.x,gate.y);ctx.strokeStyle='#b9c6e8';ctx.lineWidth=10;ctx.beginPath();ctx.arc(0,0,45,Math.PI,0);ctx.stroke();ctx.fillStyle='#7b67b5';ctx.fillRect(-50,0,100,55);ctx.shadowBlur=25;ctx.shadowColor='#c7b6ff';ctx.strokeStyle='#d9ccff';ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,35,Math.PI,0);ctx.stroke();ctx.restore();
+
+ // player
+ ctx.save();ctx.translate(p.x,p.y);ctx.fillStyle='#e9eef7';ctx.beginPath();ctx.arc(0,0,p.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#6d46b5';ctx.beginPath();ctx.arc(0,-8,13,Math.PI,0);ctx.fill();ctx.fillStyle='#202b3d';ctx.beginPath();ctx.arc(p.dir.x*7-4,p.dir.y*2-3,2.8,0,Math.PI*2);ctx.arc(p.dir.x*7+6,p.dir.y*2-3,2.8,0,Math.PI*2);ctx.fill();ctx.restore();
+ ctx.restore();
+
+ // battle overlay
+ if(battle){
+   ctx.fillStyle='rgba(7,11,20,.78)';ctx.fillRect(0,0,W,H);
+   ctx.fillStyle='#18243a';ctx.fillRect(18,H*.15,W-36,H*.62);
+   ctx.strokeStyle='#8193ad';ctx.lineWidth=2;ctx.strokeRect(18,H*.15,W-36,H*.62);
+   ctx.fillStyle='#fff';ctx.font='bold 22px system-ui';ctx.fillText(battle.m.symbol+' '+battle.m.name,35,H*.22);
+   ctx.font='15px system-ui';ctx.fillText('HP '+battle.m.hp+'/'+battle.m.maxHp,35,H*.27);
+   ctx.fillStyle='#dfe6f2';ctx.fillText('Your HP: '+p.hp+'/'+p.maxHp+'   Level: '+p.level,35,H*.67);
+   ctx.font='bold 18px system-ui';ctx.fillText(battle.playerTurn?(p.abilities.length?'ACTION: attack • ABILITY: creature power':'Press ACTION to attack!'):'The enemy is attacking...',35,H*.73);
+ }
+
+ const g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.25,W/2,H/2,Math.max(W,H)*.75);
+ g.addColorStop(0,'transparent');g.addColorStop(1,'#0008');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+}
+function loop(){update();draw();requestAnimationFrame(loop)}
+loop();
+
+// ACTION starts battles or attacks when already in battle.
+function action(){
+ if(battle){battleAction();return;}
+ baseAction();
+}
+</script>
+</body>
+</html>
