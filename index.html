@@ -15,9 +15,9 @@
   canvas{width:100%;height:100%;display:block;image-rendering:auto}
   #hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;pointer-events:none;color:white;text-shadow:0 2px 3px #000}
   .panel{background:rgba(10,17,30,.72);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:8px 11px;font-size:14px}
-  #message{position:absolute;left:50%;bottom:24%;transform:translateX(-50%);width:min(86%,520px);background:rgba(8,14,25,.9);color:#fff;border:1px solid #8193ad;border-radius:15px;padding:14px 17px;text-align:center;display:none;font-size:16px}
+  #message{position:absolute;left:50%;top:86px;transform:translateX(-50%);width:min(86%,520px);background:rgba(8,14,25,.9);color:#fff;border:1px solid #8193ad;border-radius:15px;padding:14px 17px;text-align:center;display:none;font-size:16px}
   #message b{display:block;margin-bottom:5px;color:#f5d76e}
-  #controls{position:absolute;left:18px;bottom:18px;width:170px;height:150px}
+  #controls{position:absolute;left:18px;bottom:18px;width:170px;height:150px;transition:opacity .3s}
   button{border:0;color:#fff;background:rgba(15,25,43,.78);border:1px solid rgba(255,255,255,.22);box-shadow:0 4px 10px #0007;touch-action:none}
   .d{position:absolute;width:54px;height:54px;border-radius:16px;font-size:25px}
   #up{left:58px;top:0} #left{left:0;top:54px} #down{left:58px;top:54px} #right{left:116px;top:54px}
@@ -32,7 +32,7 @@
   #continue:active{background:#4dab80}
   #saveinfo{display:none;color:#9fd8b8;font-size:14px;margin:10px 0 0}
   /* Small "Progress saved" note that fades in and out near the top of the screen. */
-  #saved{position:absolute;left:50%;top:118px;transform:translateX(-50%);background:rgba(10,17,30,.88);border:1px solid #6fbf8f;color:#bff0d0;border-radius:11px;padding:6px 13px;font-size:13px;opacity:0;transition:opacity .35s;pointer-events:none;z-index:6}
+  #saved{position:absolute;left:50%;bottom:23%;transform:translateX(-50%);background:rgba(10,17,30,.88);border:1px solid #6fbf8f;color:#bff0d0;border-radius:11px;padding:6px 13px;font-size:13px;opacity:0;transition:opacity .35s;pointer-events:none;z-index:6}
   #saved.show{opacity:1}
   #win{position:absolute;inset:0;background:#091020ed;color:white;display:none;align-items:center;justify-content:center;text-align:center;padding:25px}
   #win .card{max-width:500px;background:#18243a;border:1px solid #f5d76e;border-radius:22px;padding:30px}
@@ -50,7 +50,7 @@ window.onerror=function(msg,src,line){
 <div id="err"></div>
 <canvas id="game"></canvas>
 <div id="hud">
-<div id="storyhint" style="position:absolute;top:54px;left:10px;color:#dfe6f2;font-size:12px;text-shadow:0 2px 3px #000;pointer-events:none">Explore • Discover creatures • Battle monsters • Find the 3 shards</div>
+<div id="storyhint" style="position:absolute;top:54px;left:10px;color:#dfe6f2;font-size:12px;text-shadow:0 2px 3px #000;pointer-events:none">◀ ▶ turn &nbsp;•&nbsp; ▲ walk &nbsp;•&nbsp; ACTION to look, talk and fight</div>
 
   <div class="panel">⭐ Shards: <span id="score">0</span>/3</div>
   <div class="panel">❤️ <span id="hp">5</span> &nbsp; ⚡ Power: <span id="power">0</span> &nbsp; 🌙 <span id="area">Moonwood</span></div>
@@ -69,7 +69,8 @@ window.onerror=function(msg,src,line){
     <h1>🌙 Moonwood</h1>
     <p><b>The Lost Star</b></p>
     <p>The Moonwood forest has gone dark. Three Star Shards were scattered across the forest. Find them and return to the ancient Star Gate before the night ends.</p>
-    <p>Explore with the arrow buttons. Press <b>ACTION</b> near objects, creatures, and characters. Discovering creatures makes you stronger. When a monster blocks your path, ACTION becomes your attack.</p>
+    <p>The view floats behind you and a little above, looking over your shoulder. <b>◀</b> and <b>▶</b> turn you around, <b>▲</b> walks you forward and <b>▼</b> steps back.</p>
+    <p>Press <b>ACTION</b> near objects, creatures, and characters. Discovering creatures makes you stronger. When a monster blocks your path, ACTION becomes your attack.</p>
     <button id="continue">▶ Continue</button>
     <button id="play">Begin Adventure</button>
     <p id="saveinfo"></p>
@@ -91,7 +92,8 @@ window.onerror=function(msg,src,line){
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 let W,H,dpr,started=false,won=false,paused=false;
 const world={w:2100,h:1400};
-const p={x:150,y:700,r:18,speed:3.1,hp:5,maxHp:5,shards:0,dir:{x:1,y:0},xp:0,level:1,power:0,abilities:[]};
+// a is the direction he is facing, in radians. 0 points east, across the map.
+const p={x:150,y:700,r:18,speed:3.1,turn:.05,a:0,bob:0,hp:5,maxHp:5,shards:0,xp:0,level:1,power:0,abilities:[]};
 const keys={up:false,down:false,left:false,right:false};
 let battle=null, discovered=new Set(), defeated=new Set(), messageTimer=null;
 
@@ -124,8 +126,29 @@ const trees=[];
 for(let i=0;i<95;i++){
  let x=70+(i*263)%1950,y=70+(i*157)%1250;
  if(Math.hypot(x-150,y-700)<190) continue;
- trees.push({x,y,s:22+(i%3)*7});
+ if(Math.hypot(x-1920,y-700)<210) continue;   // leave the Star Gate standing in the open
+ trees.push({x,y,s:22+(i%3)*7,pine:i%3===1});
 }
+/* Scenery only - none of this can be walked into, it is there to make the world
+   look like a place. Border trees stand just outside the map so the forest keeps
+   going past the edge instead of ending in mid-air. */
+const scenery=[];
+for(let i=0;i<170;i++){
+ const edge=i%4, t=((i*97)%1000)/1000, band=110+((i*53)%5)*120;
+ let x,y;
+ if(edge===0){x=t*world.w;y=-band}
+ else if(edge===1){x=t*world.w;y=world.h+band}
+ else if(edge===2){x=-band;y=t*world.h}
+ else{x=world.w+band;y=t*world.h}
+ scenery.push({x:x,y:y,s:26+((i*7)%4)*9,pine:i%3===1});
+}
+const fireflies=[];
+for(let i=0;i<70;i++)fireflies.push({x:(i*271)%world.w,y:(i*167)%world.h,z:22+((i*13)%45),ph:i*.7,hue:i%2});
+const tufts=[];
+for(let i=0;i<230;i++)tufts.push({x:(i*181)%world.w,y:(i*113)%world.h,s:8+((i*5)%7)});
+const stars=[];
+for(let i=0;i<120;i++)stars.push({az:i*2.399,el:.05+((i*37)%100)/100*1.15,b:.3+((i*17)%60)/100});
+
 const npc={x:870,y:560,r:19};
 
 const gate={x:1920,y:700,r:52};
@@ -191,7 +214,7 @@ function readSave(){
 function saveGame(){
  const data={
    v:1,
-   x:p.x,y:p.y,hp:p.hp,maxHp:p.maxHp,shards:p.shards,xp:p.xp,level:p.level,power:p.power,
+   x:p.x,y:p.y,a:p.a,hp:p.hp,maxHp:p.maxHp,shards:p.shards,xp:p.xp,level:p.level,power:p.power,
    abilities:p.abilities.slice(),
    got:shards.map(s=>s.got),
    discovered:[...discovered],
@@ -205,6 +228,7 @@ function clearSave(){try{localStorage.removeItem(SAVE_KEY)}catch(e){}}
 
 function applySave(d){
  p.x=d.x;p.y=d.y;p.hp=d.hp;p.maxHp=d.maxHp;p.shards=d.shards;
+ p.a=(typeof d.a==='number')?d.a:0;   // saves made before the 3-D view have no heading
  p.xp=d.xp;p.level=d.level;p.power=d.power;p.abilities=d.abilities.slice();
  shards.forEach((s,i)=>s.got=d.got[i]);
  discovered=new Set(d.discovered);
@@ -235,6 +259,7 @@ function startGame(continuing){
    clearSave();
  }
  started=true;
+ snapCam();
  document.getElementById('start').style.display='none';
  updateHUD();
  if(continuing)say('Welcome back','You have '+p.shards+' of 3 Star Shards. Your adventure continues!');
@@ -318,7 +343,11 @@ function nearbyMonster(){
  return null;
 }
 
+function dpad(on){document.getElementById('controls').style.opacity=on?'1':'.25'}
+
 function beginBattle(m){
+ dpad(false);
+ p.a=Math.atan2(m.y-p.y,m.x-p.x);   // he squares up to it, and the camera follows
  battle={m,playerTurn:true,flash:0};
  paused=true;
  say('⚔️ Battle!',m.name+' blocks your path! Press ACTION to attack.');
@@ -334,7 +363,7 @@ function battleAction(){
      defeated.add(m.id);p.xp+=m.xp;
      if(p.xp>=p.level*20){p.xp-=p.level*20;p.level++;p.maxHp++;p.hp=p.maxHp;say('Level up!','You reached level '+p.level+' and feel stronger.');}
      else say('Victory!','You defeated the '+m.name+' and earned '+m.xp+' XP.');
-     battle=null;paused=false;updateHUD();saveGame();return;
+     battle=null;paused=false;dpad(true);updateHUD();saveGame();return;
    }
    battle.playerTurn=false;
    setTimeout(()=>{
@@ -342,7 +371,7 @@ function battleAction(){
      const dmg=m.attack+Math.floor(Math.random()*3);
      p.hp=Math.max(0,p.hp-dmg);updateHUD();
      if(p.hp<=0){
-       p.hp=p.maxHp;battle=null;paused=false;p.x=150;p.y=700;
+       p.hp=p.maxHp;battle=null;paused=false;dpad(true);p.x=150;p.y=700;
        say('You fainted','Luna carried you safely back to the forest entrance. Your adventure continues!');
        saveGame();
      }else{
@@ -362,19 +391,28 @@ function useAbility(){
  else if(ability==='Tide Heal'){p.hp=Math.min(p.maxHp,p.hp+4);say('Tide Heal','Healing water restores 4 HP.');}
  else if(ability==='Radiant Burst'){damage=18+p.power;m.hp=Math.max(0,m.hp-damage);say('Radiant Burst','Golden light hits '+m.name+' for '+damage+' damage!');}
  updateHUD();
- if(m.hp<=0){defeated.add(m.id);p.xp+=m.xp;if(p.xp>=p.level*20){p.xp-=p.level*20;p.level++;p.maxHp++;p.hp=p.maxHp;say('Level up!','You reached level '+p.level+' and feel stronger.');}battle=null;paused=false;saveGame();return;}
- battle.playerTurn=false;setTimeout(()=>{if(!battle)return;const dmg=m.attack+Math.floor(Math.random()*3);p.hp=Math.max(0,p.hp-dmg);updateHUD();if(p.hp<=0){p.hp=p.maxHp;battle=null;paused=false;p.x=150;p.y=700;say('You fainted','Luna carried you safely back to the forest entrance. Your adventure continues!');saveGame();}else{battle.playerTurn=true;say('Your turn',p.abilities.length?'ACTION to attack or ABILITY to use your creature power.':'ACTION to attack '+m.name+'!');}},550);
+ if(m.hp<=0){defeated.add(m.id);dpad(true);p.xp+=m.xp;if(p.xp>=p.level*20){p.xp-=p.level*20;p.level++;p.maxHp++;p.hp=p.maxHp;say('Level up!','You reached level '+p.level+' and feel stronger.');}battle=null;paused=false;saveGame();return;}
+ battle.playerTurn=false;setTimeout(()=>{if(!battle)return;const dmg=m.attack+Math.floor(Math.random()*3);p.hp=Math.max(0,p.hp-dmg);updateHUD();if(p.hp<=0){p.hp=p.maxHp;battle=null;paused=false;dpad(true);p.x=150;p.y=700;say('You fainted','Luna carried you safely back to the forest entrance. Your adventure continues!');saveGame();}else{battle.playerTurn=true;say('Your turn',p.abilities.length?'ACTION to attack or ABILITY to use your creature power.':'ACTION to attack '+m.name+'!');}},550);
 }
 
+/* Now that the camera sits behind him, left and right turn him on the spot and
+   the camera swings round to follow, the way it works in a 3-D game. Up and down
+   walk him along whichever way he is facing. */
 function update(){
- if(!started||won)return;
- if(battle){return;}
- let dx=(keys.right?1:0)-(keys.left?1:0),dy=(keys.down?1:0)-(keys.up?1:0);
- if(dx||dy){
-   let len=Math.hypot(dx,dy);dx/=len;dy/=len;p.dir={x:dx,y:dy};
-   const nx=p.x+dx*p.speed,ny=p.y+dy*p.speed;
-   if(!blocked(nx,p.y))p.x=nx;if(!blocked(p.x,ny))p.y=ny;
- }
+ if(!started){idleCam();return}
+ if(won)return;
+ if(battle){updateCam();return}
+ if(keys.left)p.a-=p.turn;
+ if(keys.right)p.a+=p.turn;
+ const drive=(keys.up?1:0)-(keys.down?.6:0);
+ if(drive){
+   const dx=Math.cos(p.a)*p.speed*drive, dy=Math.sin(p.a)*p.speed*drive;
+   const nx=p.x+dx, ny=p.y+dy;
+   if(!blocked(nx,p.y))p.x=nx;
+   if(!blocked(p.x,ny))p.y=ny;
+   p.bob+=.24;            // the up-and-down of walking
+ }else p.bob+=.03;
+ updateCam();
  const m=nearbyMonster();
  if(m) beginBattle(m);
  updateHUD();
@@ -387,64 +425,459 @@ function updateHUD(){
  document.getElementById('area').textContent=p.x<650?'Moonwood':p.x<1250?'Whispering Grove':p.x<1700?'Star Meadow':'Starlight Gate';
 }
 
-function camera(){return{x:Math.max(0,Math.min(world.w-W,p.x-W/2)),y:Math.max(0,Math.min(world.h-H,p.y-H/2))}}
+/* ---------------------------------------------------------------------------
+   THE CAMERA
+
+   Every place in the game still has an x and a y on a flat map. What changed is
+   how that map is drawn. Instead of looking straight down on it, the game looks
+   through a camera that floats a little way BEHIND the boy and well ABOVE him,
+   tilted down over his shoulder. Height is called z, and z 0 is the ground.
+
+   dist   = how far back the camera sits
+   height = how high up it floats
+   aim    = the height it points at, a bit above his feet
+   yaw    = which way it is looking, which chases the way he is facing
+   pitch  = how far it tilts down, worked out from the three numbers above
+--------------------------------------------------------------------------- */
+const cam={x:0,y:0,z:0,yaw:0,pitch:.4,f:600,dist:258,base:258,height:172,aim:74};
+const view={fx:1,fy:0,rx:0,ry:1,cp:1,sp:0};
+const NEAR=16, FAR=2400, SKY='#26365a';
+
+// Worked out once a frame and used by every line that draws something.
+function setupView(){
+ view.fx=Math.cos(cam.yaw);view.fy=Math.sin(cam.yaw);   // the way the camera looks
+ view.rx=-view.fy;view.ry=view.fx;                      // the camera's right hand side
+ view.cp=Math.cos(cam.pitch);view.sp=Math.sin(cam.pitch);
+ cam.f=Math.min(H*.95,W*1.35);                          // how zoomed in the lens is
+}
+
+function camPitch(){return Math.atan2(cam.height-(battle?32:cam.aim),cam.dist)}
+
+// Swing the camera round to sit behind whichever way he is facing. The .1 and
+// .22 are what make it glide into place instead of snapping there.
+function updateCam(){
+ let ax=p.x, ay=p.y, want=p.a;
+ if(battle){                                       // a fight is watched from the side
+  const m=battle.m;
+  ax=(p.x+m.x)/2;ay=(p.y+m.y)/2;
+  want=Math.atan2(m.y-p.y,m.x-p.x)+1.25;   // almost side on, so neither hides the other
+ }
+ let turn=want-cam.yaw;
+ while(turn>Math.PI)turn-=Math.PI*2;
+ while(turn<-Math.PI)turn+=Math.PI*2;
+ cam.yaw+=turn*.1;
+ cam.dist+=((battle?206:cam.base)-cam.dist)*.07;   // leans in for a fight, back out afterwards
+ cam.x+=(ax-Math.cos(cam.yaw)*cam.dist-cam.x)*.22;
+ cam.y+=(ay-Math.sin(cam.yaw)*cam.dist-cam.y)*.22;
+ cam.z=cam.height;cam.pitch=camPitch();
+}
+// Put the camera straight behind him with no gliding - used when a game starts.
+function snapCam(){
+ cam.yaw=p.a;cam.x=p.x-Math.cos(p.a)*cam.dist;cam.y=p.y-Math.sin(p.a)*cam.dist;
+ cam.z=cam.height;cam.pitch=camPitch();
+}
+// On the start screen the camera drifts slowly around him, like a title shot.
+function idleCam(){
+ cam.yaw+=.0018;cam.x=p.x-Math.cos(cam.yaw)*cam.dist;cam.y=p.y-Math.sin(cam.yaw)*cam.dist;
+ cam.z=cam.height;cam.pitch=camPitch();
+}
+snapCam();
+
+/* ---------------------------------------------------------------------------
+   FROM THE WORLD TO THE SCREEN
+
+   project() is the heart of the 3-D. Give it a spot in the world and it says
+   where on the screen that spot lands, how far away it is, and how much things
+   there should shrink. Anything behind the camera has no answer, so it says
+   null and the drawing code skips it.
+--------------------------------------------------------------------------- */
+function depthAt(x,y,z){
+ const dx=x-cam.x,dy=y-cam.y,dz=(z||0)-cam.z;
+ return (dx*view.fx+dy*view.fy)*view.cp-dz*view.sp;
+}
+function project(x,y,z){
+ const dx=x-cam.x,dy=y-cam.y,dz=(z||0)-cam.z;
+ const fwd=dx*view.fx+dy*view.fy, side=dx*view.rx+dy*view.ry;
+ const d=fwd*view.cp-dz*view.sp;
+ if(d<NEAR*.98)return null;
+ const up=fwd*view.sp+dz*view.cp, s=cam.f/d;
+ return {x:W/2+side*s,y:H/2-up*s,d:d,s:s};
+}
+// The line where the ground meets the sky.
+function horizonY(){return H/2-cam.f*Math.tan(cam.pitch)}
+
+// Cuts away the part of a shape that is behind the camera, so a huge shape like
+// the ground - which stretches out past the camera on both sides - still draws.
+function clipNear(pts){
+ const out=[];
+ for(let i=0;i<pts.length;i++){
+  const a=pts[i],b=pts[(i+1)%pts.length];
+  const da=depthAt(a[0],a[1],a[2]),db=depthAt(b[0],b[1],b[2]);
+  if(da>=NEAR)out.push(a);
+  if((da>=NEAR)!==(db>=NEAR)){
+   const t=(NEAR-da)/(db-da);
+   out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]);
+  }
+ }
+ return out;
+}
+// Draws a flat shape given by its corners in the world. The thin outline in the
+// same colour hides the hairline gap that otherwise shows between neighbours.
+function fillPoly(pts,color){
+ const c=clipNear(pts);if(c.length<3)return;
+ ctx.beginPath();
+ for(let i=0;i<c.length;i++){
+  const q=project(c[i][0],c[i][1],c[i][2]);if(!q)return;
+  if(i)ctx.lineTo(q.x,q.y);else ctx.moveTo(q.x,q.y);
+ }
+ ctx.closePath();ctx.fillStyle=color;ctx.fill();
+ ctx.strokeStyle=color;ctx.lineWidth=1;ctx.stroke();
+}
+// A winding band lying flat on the ground: the path and the river. Each piece is
+// drawn separately so a curve that runs off behind the camera still works.
+function ribbon(pts,width,color){
+ const n=[];
+ for(let i=0;i<pts.length;i++){
+  const a=pts[Math.max(0,i-1)],b=pts[Math.min(pts.length-1,i+1)];
+  let nx=b.y-a.y,ny=a.x-b.x;const L=Math.hypot(nx,ny)||1;
+  n.push({x:nx/L*width/2,y:ny/L*width/2});
+ }
+ for(let i=0;i<pts.length-1;i++){
+  const a=pts[i],b=pts[i+1],na=n[i],nb=n[i+1];
+  fillPoly([[a.x+na.x,a.y+na.y,0],[b.x+nb.x,b.y+nb.y,0],[b.x-nb.x,b.y-nb.y,0],[a.x-na.x,a.y-na.y,0]],color);
+ }
+}
+// A dark oval on the ground under something. Shadows are what stop everything
+// from looking like it is floating.
+function groundShadow(x,y,r,a){
+ const q=project(x,y,0);if(!q||q.d>1400)return;
+ ctx.fillStyle='rgba(5,10,9,'+(a||.3)+')';
+ ctx.beginPath();ctx.ellipse(q.x,q.y,r*q.s,r*q.s*view.sp+.6,0,0,6.3);ctx.fill();
+}
+/* An upright picture - a tree, a creature, the boy. It is drawn standing on its
+   spot on the ground, shrinking with distance and leaning the way a tall thing
+   really leans when you look at the edge of the picture. Inside fn the ground is
+   0, up is negative, and one unit is one step on the map. */
+function billboard(x,y,h,fn){
+ const b=project(x,y,0);if(!b)return;
+ const t=project(x,y,h);
+ let ang=0,s=b.s;
+ if(t){const dx=t.x-b.x,dy=t.y-b.y,L=Math.hypot(dx,dy);if(L>1){ang=Math.atan2(dx,-dy);s=L/h}}
+ ctx.save();ctx.translate(b.x,b.y);ctx.rotate(ang);ctx.scale(s,s);fn(s);ctx.restore();
+}
+
+/* ---------------------------------------------------------------------------
+   THE SKY AND THE GROUND
+--------------------------------------------------------------------------- */
+function quadCurve(x0,y0,cx,cy,x1,y1,n,out){
+ for(let i=0;i<=n;i++){const t=i/n,u=1-t;out.push({x:u*u*x0+2*u*t*cx+t*t*x1,y:u*u*y0+2*u*t*cy+t*t*y1});}
+ return out;
+}
+const pathPts=[];quadCurve(0,720,520,590,900,690,14,pathPts);pathPts.pop();quadCurve(900,690,1350,820,2100,690,14,pathPts);
+const riverPts=[];quadCurve(1150,-200,1190,390,1100,700,12,riverPts);riverPts.pop();quadCurve(1100,700,1040,1050,1250,1600,12,riverPts);
+
+function drawSky(){
+ const hy=horizonY();
+ ctx.fillStyle=SKY;ctx.fillRect(0,0,W,H);
+ if(hy>0){const g=ctx.createLinearGradient(0,0,0,hy);g.addColorStop(0,'#060a16');g.addColorStop(1,SKY);ctx.fillStyle=g;ctx.fillRect(0,0,W,hy);}
+ // Stars sit infinitely far away, so they swing past as the camera turns.
+ for(const st of stars){
+  const ce=Math.cos(st.el);
+  const q=project(cam.x+ce*Math.cos(st.az)*9000,cam.y+ce*Math.sin(st.az)*9000,cam.z+Math.sin(st.el)*9000);
+  if(!q||q.y>hy)continue;
+  ctx.globalAlpha=st.b;ctx.fillStyle='#e3e9ff';ctx.fillRect(q.x,q.y,2,2);
+ }
+ ctx.globalAlpha=1;
+ // The moon, hanging over the same corner of the forest all night.
+ const m=project(cam.x+Math.cos(.62)*Math.cos(2.3)*9000,cam.y+Math.cos(.62)*Math.sin(2.3)*9000,cam.z+Math.sin(.62)*9000);
+ if(m&&m.y<hy){
+  const g=ctx.createRadialGradient(m.x,m.y,4,m.x,m.y,70);
+  g.addColorStop(0,'rgba(233,238,255,.5)');g.addColorStop(1,'rgba(233,238,255,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(m.x,m.y,70,0,6.3);ctx.fill();
+  ctx.fillStyle='#eef2ff';ctx.beginPath();ctx.arc(m.x,m.y,22,0,6.3);ctx.fill();
+  ctx.fillStyle='rgba(190,200,225,.5)';ctx.beginPath();ctx.arc(m.x-7,m.y-5,4,0,6.3);ctx.arc(m.x+6,m.y+4,6,0,6.3);ctx.fill();
+ }
+}
+
+function drawGround(){
+ // The forest floor runs far past the edges of the map, so the ground never
+ // just stops in mid-air at the horizon.
+ fillPoly([[-5000,-5000,0],[world.w+5000,-5000,0],[world.w+5000,world.h+5000,0],[-5000,world.h+5000,0]],'#132320');
+ fillPoly([[-60,-60,0],[world.w+60,-60,0],[world.w+60,world.h+60,0],[-60,world.h+60,0]],'#1d3a2c');
+ ribbon(pathPts,105,'#2f4739');
+ ribbon(riverPts,70,'#2b5563');
+ ribbon(riverPts,30,'#3d7d8d');
+ // Tufts of grass, close by only - they are too small to see far away.
+ for(const t of tufts){
+  const q=project(t.x,t.y,0);if(!q||q.d>820)continue;
+  ctx.fillStyle='rgba(41,84,58,.5)';
+  ctx.beginPath();ctx.ellipse(q.x,q.y,t.s*q.s*1.3,t.s*q.s*view.sp+.4,0,0,6.3);ctx.fill();
+ }
+}
+
+/* ---------------------------------------------------------------------------
+   EVERYTHING THAT STANDS UP
+--------------------------------------------------------------------------- */
+function drawTree(t){
+ const h=t.s*(t.pine?4.6:3.6);
+ groundShadow(t.x,t.y,t.s*.5,.3);
+ billboard(t.x,t.y,h,()=>{
+  ctx.fillStyle='#4a3628';ctx.fillRect(-t.s*.13,-h*.55,t.s*.26,h*.55);
+  if(t.pine){
+   ctx.fillStyle='#1b4232';
+   for(let i=0;i<3;i++){
+    const y=-h*(.42+i*.19), w=t.s*(1.05-i*.26);
+    ctx.beginPath();ctx.moveTo(-w,y);ctx.lineTo(w,y);ctx.lineTo(0,y-h*.3);ctx.closePath();ctx.fill();
+   }
+   ctx.fillStyle='rgba(72,140,108,.5)';   // moonlight down one side
+   ctx.beginPath();ctx.moveTo(-t.s*1.05,-h*.42);ctx.lineTo(-t.s*.3,-h*.42);ctx.lineTo(0,-h);ctx.closePath();ctx.fill();
+  }else{
+   ctx.fillStyle='#1b4232';
+   ctx.beginPath();ctx.arc(0,-h*.66,t.s*1.02,0,6.3);ctx.fill();
+   ctx.beginPath();ctx.arc(t.s*.5,-h*.83,t.s*.58,0,6.3);ctx.fill();
+   ctx.beginPath();ctx.arc(-t.s*.52,-h*.8,t.s*.55,0,6.3);ctx.fill();
+   ctx.fillStyle='rgba(64,128,96,.55)';   // moonlight catching the top left
+   ctx.beginPath();ctx.arc(-t.s*.34,-h*.84,t.s*.46,0,6.3);ctx.fill();
+  }
+ });
+}
+
+function drawRock(r){
+ const s=r[2];
+ groundShadow(r[0],r[1],s*.58,.3);
+ billboard(r[0],r[1],s*.72,()=>{
+  ctx.fillStyle='#4d5a66';ctx.beginPath();ctx.ellipse(0,0,s*.62,s*.72,0,Math.PI,0);ctx.fill();
+  ctx.fillStyle='#66737f';ctx.beginPath();ctx.ellipse(-s*.16,-s*.36,s*.28,s*.17,0,0,6.3);ctx.fill();
+ });
+}
+
+function drawFly(f){
+ const t=Date.now()/700+f.ph;
+ const q=project(f.x+Math.sin(t)*22,f.y+Math.cos(t*.8)*22,f.z+Math.sin(t*1.7)*9);
+ if(!q||q.d>1300)return;
+ const r=Math.max(1.2,2.6*q.s);
+ ctx.fillStyle=f.hue?'rgba(245,215,110,.22)':'rgba(190,170,245,.22)';
+ ctx.beginPath();ctx.arc(q.x,q.y,r*2.6,0,6.3);ctx.fill();
+ ctx.fillStyle=f.hue?'#f7e79a':'#d6c8ff';
+ ctx.beginPath();ctx.arc(q.x,q.y,r,0,6.3);ctx.fill();
+}
 
 function drawCreature(c){
- ctx.save();ctx.translate(c.x,c.y);
- ctx.fillStyle=c.kind==='forest'?'#75a85c':c.kind==='magic'?'#a87ed6':c.kind==='water'?'#6faed0':'#d7b65e';
- ctx.beginPath();ctx.arc(0,0,17,0,Math.PI*2);ctx.fill();
- ctx.fillStyle='#172235';ctx.beginPath();ctx.arc(-6,-3,2.5,0,Math.PI*2);ctx.arc(6,-3,2.5,0,Math.PI*2);ctx.fill();
- ctx.restore();
+ const bob=Math.sin(Date.now()/420+c.x)*2;
+ const col=c.kind==='forest'?'#75a85c':c.kind==='magic'?'#a87ed6':c.kind==='water'?'#6faed0':'#d7b65e';
+ groundShadow(c.x,c.y,13,.3);
+ billboard(c.x,c.y,38,()=>{
+  ctx.translate(0,bob);
+  ctx.fillStyle=col;
+  ctx.beginPath();ctx.ellipse(0,-9,10,9,0,0,6.3);ctx.fill();          // body
+  ctx.beginPath();ctx.arc(0,-24,13,0,6.3);ctx.fill();                 // head
+  ctx.beginPath();ctx.moveTo(-13,-30);ctx.lineTo(-10,-48);ctx.lineTo(-1,-33);ctx.closePath();  // ears
+  ctx.moveTo(13,-30);ctx.lineTo(10,-48);ctx.lineTo(1,-33);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#16202f';
+  ctx.beginPath();ctx.arc(-5,-26,2.6,0,6.3);ctx.arc(5,-26,2.6,0,6.3);ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.75)';                              // a sparkle, so he can spot them among the trees
+  ctx.beginPath();ctx.arc(0,-46+Math.sin(Date.now()/300+c.x)*3,2.2,0,6.3);ctx.fill();
+ });
 }
 
 function drawMonster(m){
- ctx.save();ctx.translate(m.x,m.y);
- ctx.fillStyle='#7e4b67';ctx.beginPath();ctx.arc(0,0,24,0,Math.PI*2);ctx.fill();
- ctx.fillStyle='#f1d36a';ctx.beginPath();ctx.arc(-8,-4,3,0,Math.PI*2);ctx.arc(8,-4,3,0,Math.PI*2);ctx.fill();
- ctx.restore();
- // health bar
- ctx.fillStyle='#111';ctx.fillRect(m.x-27,m.y-38,54,7);ctx.fillStyle='#df6d72';ctx.fillRect(m.x-25,m.y-36,50*(m.hp/m.maxHp),3);
+ groundShadow(m.x,m.y,19,.36);
+ billboard(m.x,m.y,58,()=>{
+  ctx.fillStyle='#6a3f58';
+  ctx.beginPath();ctx.ellipse(0,-14,17,14,0,0,6.3);ctx.fill();        // haunches
+  ctx.fillStyle='#7e4b67';
+  ctx.beginPath();ctx.arc(0,-33,19,0,6.3);ctx.fill();                 // head
+  ctx.beginPath();ctx.moveTo(-18,-40);ctx.lineTo(-15,-62);ctx.lineTo(-4,-44);ctx.closePath();   // horns
+  ctx.moveTo(18,-40);ctx.lineTo(15,-62);ctx.lineTo(4,-44);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#f1d36a';
+  ctx.beginPath();ctx.arc(-7,-35,3.4,0,6.3);ctx.arc(7,-35,3.4,0,6.3);ctx.fill();
+ });
+ if(battle&&battle.m===m)return;                                      // in a fight the name plate shows its health instead
+ const q=project(m.x,m.y,74);                                         // health bar, floating level over its head
+ if(q&&q.d<1200){
+  const w=Math.max(26,52*q.s);
+  ctx.fillStyle='#0c1220';ctx.fillRect(q.x-w/2,q.y,w,w*.17);
+  ctx.fillStyle='#df6d72';ctx.fillRect(q.x-w/2+w*.04,q.y+w*.04,(w-w*.08)*(m.hp/m.maxHp),w*.09);
+ }
+}
+
+function drawLuna(){
+ groundShadow(npc.x,npc.y,14,.3);
+ billboard(npc.x,npc.y,60,()=>{
+  ctx.fillStyle='rgba(245,215,110,.13)';ctx.beginPath();ctx.arc(0,-34,34,0,6.3);ctx.fill();
+  ctx.fillStyle='#352641';                                            // robe
+  ctx.beginPath();ctx.moveTo(-14,0);ctx.lineTo(14,0);ctx.lineTo(8,-36);ctx.lineTo(-8,-36);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#d9a1d5';ctx.beginPath();ctx.arc(0,-45,10,0,6.3);ctx.fill();   // head
+  ctx.fillStyle='#8f7ac4';ctx.fillRect(-1.4,-58,2.8,26);              // staff
+  ctx.fillStyle='#f5d76e';
+  ctx.beginPath();ctx.arc(0,-60,4.5+Math.sin(Date.now()/380)*.8,0,6.3);ctx.fill();
+ });
+}
+
+function drawShard(s){
+ const t=Date.now()/500+s.x, hover=36+Math.sin(t)*7;
+ const g=project(s.x,s.y,0);
+ if(g&&g.d<1600){                                                     // pool of light on the grass below
+  ctx.fillStyle='rgba(245,215,110,.15)';
+  ctx.beginPath();ctx.ellipse(g.x,g.y,36*g.s,36*g.s*view.sp+1,0,0,6.3);ctx.fill();
+ }
+ billboard(s.x,s.y,hover,()=>{
+  ctx.translate(0,-hover);ctx.rotate(t*.5);
+  ctx.shadowBlur=18;ctx.shadowColor='#f7df78';
+  ctx.fillStyle='#f5d76e';ctx.fillRect(-9,-9,18,18);
+  ctx.shadowBlur=0;ctx.fillStyle='#fff6d0';ctx.fillRect(-4,-4,8,8);
+ });
+}
+
+// The Star Gate is a real archway standing across the far end of the path, so
+// you walk up to it and it towers over you.
+function drawGate(){
+ const R=112,T=20,seg=18,lit=p.shards===3;
+ const pt=(a,rr)=>[gate.x,gate.y+Math.cos(a)*rr,Math.sin(a)*rr+10];
+ const inner=[];
+ for(let i=0;i<=seg;i++)inner.push(pt(Math.PI*i/seg,R));
+ inner.push([gate.x,gate.y-R,0],[gate.x,gate.y+R,0]);
+ fillPoly(inner,lit?'rgba(215,199,255,.62)':'rgba(109,90,178,.42)');  // the doorway itself
+ for(let i=0;i<5;i++){                                                // ripples of light inside it
+  const rr=R*(.2+i*.18), a0=Math.PI*.06;
+  const band=[];
+  for(let k=0;k<=10;k++)band.push(pt(a0+(Math.PI-a0*2)*k/10,rr));
+  for(let k=10;k>=0;k--)band.push(pt(a0+(Math.PI-a0*2)*k/10,rr-3));
+  fillPoly(band,lit?'rgba(255,250,220,.3)':'rgba(170,150,240,.16)');
+ }
+ for(let i=0;i<seg;i++){
+  const a0=Math.PI*i/seg,a1=Math.PI*(i+1)/seg;
+  fillPoly([pt(a0,R),pt(a0,R+T),pt(a1,R+T),pt(a1,R)],lit?'#cdbfff':'#93a0c8');
+ }
+ for(const side of [-1,1]){                                           // the two stone feet
+  fillPoly([[gate.x-9,gate.y+side*(R+T+4),0],[gate.x+9,gate.y+side*(R+T+4),0],[gate.x+9,gate.y+side*(R-4),0],[gate.x-9,gate.y+side*(R-4),0]],'#5d6884');
+  fillPoly([[gate.x,gate.y+side*(R-4),0],[gate.x,gate.y+side*(R+T+4),0],[gate.x,gate.y+side*(R+T+4),14],[gate.x,gate.y+side*(R-4),14]],'#7c88ab');
+ }
+}
+
+function drawPlayer(){
+ let rel=p.a-cam.yaw;                                                 // how far he has turned ahead of the camera
+ while(rel>Math.PI)rel-=Math.PI*2;
+ while(rel<-Math.PI)rel+=Math.PI*2;
+ const step=Math.sin(p.bob), lift=Math.abs(step)*1.5, turnX=Math.sin(rel);
+ groundShadow(p.x,p.y,16,.38);
+ billboard(p.x,p.y,60,()=>{
+  ctx.translate(0,-lift);
+  ctx.fillStyle='#39476b';                                            // legs, swinging as he walks
+  ctx.fillRect(-9,-18+step*2,7,18);ctx.fillRect(2,-18-step*2,7,18);
+  ctx.fillStyle='#5b3f24';ctx.fillRect(-10,-4+step*2,9,4);ctx.fillRect(1,-4-step*2,9,4);
+  ctx.fillStyle='#6d46b5';                                            // hooded cloak, seen from behind
+  ctx.beginPath();ctx.moveTo(-15,-14);ctx.lineTo(15,-14);ctx.lineTo(10,-44);ctx.lineTo(-10,-44);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#8257d6';                                            // moonlight down one edge
+  ctx.beginPath();ctx.moveTo(-15,-14);ctx.lineTo(-9,-14);ctx.lineTo(-7,-44);ctx.lineTo(-10,-44);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#3b2a46';ctx.beginPath();ctx.arc(0,-52,10,0,6.3);ctx.fill();        // the back of his head
+  if(Math.abs(turnX)>.2){                                             // a glimpse of cheek and eye as he turns
+   ctx.fillStyle='#e9d3b8';
+   ctx.beginPath();ctx.ellipse(turnX*6,-51,5.5,7,0,0,6.3);ctx.fill();
+   ctx.fillStyle='#202b3d';
+   ctx.beginPath();ctx.arc(turnX*8,-52,1.8,0,6.3);ctx.fill();
+  }
+  ctx.fillStyle='#7d55c9';                                            // the hood itself
+  ctx.beginPath();ctx.arc(0,-45,12,Math.PI,0);ctx.fill();
+ });
+}
+
+/* ---------------------------------------------------------------------------
+   PUTTING THE PICTURE TOGETHER
+
+   Things further away have to be drawn first so that nearer things cover them
+   up. So everything upright goes into one list with its distance, the list is
+   sorted far-to-near, and then it is drawn in that order.
+--------------------------------------------------------------------------- */
+let queue=[];
+function push(type,o,x,y){
+ const d=depthAt(x,y,0);
+ if(d<NEAR||d>FAR)return;
+ queue.push({d:d,type:type,o:o});
 }
 
 function draw(){
- ctx.clearRect(0,0,W,H);const c=camera();ctx.save();ctx.translate(-c.x,-c.y);
- ctx.fillStyle='#182c25';ctx.fillRect(0,0,world.w,world.h);
+ setupView();
+ drawSky();
+ drawGround();
 
- // paths and water
- ctx.strokeStyle='#263d35';ctx.lineWidth=105;ctx.beginPath();ctx.moveTo(0,720);ctx.quadraticCurveTo(520,590,900,690);ctx.quadraticCurveTo(1350,820,2100,690);ctx.stroke();
- ctx.strokeStyle='#315f6b';ctx.lineWidth=70;ctx.beginPath();ctx.moveTo(1150,0);ctx.quadraticCurveTo(1190,390,1100,700);ctx.quadraticCurveTo(1040,1050,1250,1400);ctx.stroke();
+ queue.length=0;
+ for(const t of trees)push('tree',t,t.x,t.y);
+ for(const t of scenery)push('tree',t,t.x,t.y);
+ for(const r of rocks)push('rock',r,r[0],r[1]);
+ for(const f of fireflies)push('fly',f,f.x,f.y);
+ for(const cr of creatures)if(!discovered.has(cr.id))push('creature',cr,cr.x,cr.y);
+ for(const s of shards)if(!s.got)push('shard',s,s.x,s.y);
+ for(const m of monsters)if(!defeated.has(m.id))push('monster',m,m.x,m.y);
+ push('luna',npc,npc.x,npc.y);
+ push('gate',gate,gate.x,gate.y);
+ push('player',p,p.x,p.y);
+ queue.sort((a,b)=>b.d-a.d);
 
- for(let i=0;i<160;i++){let x=(i*137)%world.w,y=(i*79)%world.h;ctx.fillStyle=i%2?'#7b7ec2':'#d0a6d5';ctx.fillRect(x,y,3,3)}
- for(const r of rocks){ctx.fillStyle='#53606b';ctx.beginPath();ctx.ellipse(r[0],r[1],r[2]*.65,r[2]*.45,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#687680';ctx.beginPath();ctx.ellipse(r[0]-r[2]*.15,r[1]-r[2]*.12,r[2]*.35,r[2]*.18,0,0,Math.PI*2);ctx.fill()}
- for(const t of trees){ctx.fillStyle='#543d30';ctx.fillRect(t.x-5,t.y,t.s*.28,t.s*1.3);ctx.fillStyle='#1e4937';ctx.beginPath();ctx.arc(t.x,t.y,t.s,0,Math.PI*2);ctx.fill();ctx.fillStyle='#2e6248';ctx.beginPath();ctx.arc(t.x-8,t.y-8,t.s*.62,0,Math.PI*2);ctx.fill()}
+ const pd=depthAt(p.x,p.y,0), ps=(p.x-cam.x)*view.rx+(p.y-cam.y)*view.ry;
+ for(const it of queue){
+  let fade=it.d>1100?1-(it.d-1100)/1000:1;                            // distant things melt into the haze
+  const o=it.o;
+  if(it.type==='tree'||it.type==='rock'){
+   const ox=it.type==='rock'?o[0]:o.x, oy=it.type==='rock'?o[1]:o.y;
+   const rad=it.type==='rock'?o[2]*.6:o.s;
+   if(it.d<150)fade*=Math.max(.1,(it.d-NEAR)/134);                    // almost against the lens
+   else if(it.d<pd-30){
+    const side=(ox-cam.x)*view.rx+(oy-cam.y)*view.ry;
+    if(Math.abs(side-ps)<46+rad)fade*=.22;                            // standing in the way
+   }
+  }
+  if(fade<=.03)continue;
+  ctx.globalAlpha=fade<1?fade:1;
+  if(it.type==='tree')drawTree(o);
+  else if(it.type==='rock')drawRock(o);
+  else if(it.type==='fly')drawFly(o);
+  else if(it.type==='creature')drawCreature(o);
+  else if(it.type==='shard')drawShard(o);
+  else if(it.type==='monster')drawMonster(o);
+  else if(it.type==='luna')drawLuna();
+  else if(it.type==='gate')drawGate();
+  else drawPlayer();
+ }
+ ctx.globalAlpha=1;
 
- // creatures
- for(const cr of creatures)if(!discovered.has(cr.id))drawCreature(cr);
- // shards
- for(const s of shards)if(!s.got){const pulse=1+Math.sin(Date.now()/220+s.x)*.08;ctx.save();ctx.translate(s.x,s.y);ctx.rotate(Math.PI/4);ctx.shadowBlur=20;ctx.shadowColor='#f7df78';ctx.fillStyle='#f5d76e';ctx.fillRect(-11*pulse,-11*pulse,22*pulse,22*pulse);ctx.restore();}
- // monsters
- for(const m of monsters)if(!defeated.has(m.id))drawMonster(m);
+ // Night haze sitting along the horizon, which is what makes the far trees feel
+ // far away rather than just small.
+ const hy=horizonY(),fogH=H*.34;
+ if(hy<H){
+  const g=ctx.createLinearGradient(0,hy-2,0,hy+fogH);
+  g.addColorStop(0,'rgba(38,54,90,.82)');g.addColorStop(1,'rgba(38,54,90,0)');
+  ctx.fillStyle=g;ctx.fillRect(0,hy-2,W,fogH+2);
+ }
 
- // Luna
- ctx.fillStyle='#d9a1d5';ctx.beginPath();ctx.arc(npc.x,npc.y,npc.r,0,Math.PI*2);ctx.fill();
- ctx.fillStyle='#352641';ctx.fillRect(npc.x-11,npc.y-3,22,18);ctx.fillStyle='#f5d76e';ctx.fillRect(npc.x-3,npc.y-24,6,8);
-
- // gate
- ctx.save();ctx.translate(gate.x,gate.y);ctx.strokeStyle='#b9c6e8';ctx.lineWidth=10;ctx.beginPath();ctx.arc(0,0,45,Math.PI,0);ctx.stroke();ctx.fillStyle='#7b67b5';ctx.fillRect(-50,0,100,55);ctx.shadowBlur=25;ctx.shadowColor='#c7b6ff';ctx.strokeStyle='#d9ccff';ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,35,Math.PI,0);ctx.stroke();ctx.restore();
-
- // player
- ctx.save();ctx.translate(p.x,p.y);ctx.fillStyle='#e9eef7';ctx.beginPath();ctx.arc(0,0,p.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#6d46b5';ctx.beginPath();ctx.arc(0,-8,13,Math.PI,0);ctx.fill();ctx.fillStyle='#202b3d';ctx.beginPath();ctx.arc(p.dir.x*7-4,p.dir.y*2-3,2.8,0,Math.PI*2);ctx.arc(p.dir.x*7+6,p.dir.y*2-3,2.8,0,Math.PI*2);ctx.fill();ctx.restore();
- ctx.restore();
-
- // battle overlay
+ /* A fight no longer hides the forest behind a flat panel. The night closes in
+    around the monster instead, its name hangs over its head, and the two lines
+    you need sit in a small panel below it. */
  if(battle){
-   ctx.fillStyle='rgba(7,11,20,.78)';ctx.fillRect(0,0,W,H);
-   ctx.fillStyle='#18243a';ctx.fillRect(18,H*.15,W-36,H*.62);
-   ctx.strokeStyle='#8193ad';ctx.lineWidth=2;ctx.strokeRect(18,H*.15,W-36,H*.62);
-   ctx.fillStyle='#fff';ctx.font='bold 22px system-ui';ctx.fillText(battle.m.symbol+' '+battle.m.name,35,H*.22);
-   ctx.font='15px system-ui';ctx.fillText('HP '+battle.m.hp+'/'+battle.m.maxHp,35,H*.27);
-   ctx.fillStyle='#dfe6f2';ctx.fillText('Your HP: '+p.hp+'/'+p.maxHp+'   Level: '+p.level,35,H*.67);
-   ctx.font='bold 18px system-ui';ctx.fillText(battle.playerTurn?(p.abilities.length?'ACTION: attack • ABILITY: creature power':'Press ACTION to attack!'):'The enemy is attacking...',35,H*.73);
+   const m=battle.m, spot=project(m.x,m.y,30);
+   if(spot){
+    const g2=ctx.createRadialGradient(spot.x,spot.y,20,spot.x,spot.y,Math.max(W,H)*.55);
+    g2.addColorStop(0,'rgba(7,11,20,0)');g2.addColorStop(1,'rgba(7,11,20,.74)');ctx.fillStyle=g2;
+   }else ctx.fillStyle='rgba(7,11,20,.55)';
+   ctx.fillRect(0,0,W,H);
+   ctx.textAlign='center';
+   const plate=project(m.x,m.y,78);
+   if(plate){
+    ctx.font='bold 18px system-ui';ctx.fillStyle='#fff';
+    ctx.shadowBlur=6;ctx.shadowColor='#000';
+    ctx.fillText(m.symbol+' '+m.name,plate.x,plate.y);
+    ctx.font='14px system-ui';ctx.fillStyle='#ffc9cc';
+    ctx.fillText('HP '+m.hp+'/'+m.maxHp,plate.x,plate.y+19);
+    ctx.shadowBlur=0;
+   }
+   const bw=Math.min(W-36,430), bx=(W-bw)/2, by=Math.max(H*.52,H-244);
+   ctx.fillStyle='rgba(8,14,25,.88)';ctx.fillRect(bx,by,bw,72);
+   ctx.strokeStyle='#8193ad';ctx.lineWidth=2;ctx.strokeRect(bx,by,bw,72);
+   ctx.fillStyle='#dfe6f2';ctx.font='15px system-ui';
+   ctx.fillText('Your HP: '+p.hp+'/'+p.maxHp+'   Level: '+p.level,W/2,by+26);
+   ctx.fillStyle='#f5d76e';ctx.font='bold 16px system-ui';
+   ctx.fillText(battle.playerTurn?(p.abilities.length?'ACTION: attack • ABILITY: power':'Press ACTION to attack!'):'The enemy is attacking...',W/2,by+52);
+   ctx.textAlign='left';
  }
 
  const g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.25,W/2,H/2,Math.max(W,H)*.75);
