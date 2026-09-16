@@ -1,0 +1,59 @@
+name: Deploy to GitHub Pages
+
+# This is what publishes https://luketeal.github.io/moonwood/
+#
+#   Push to main                    -> main goes live, on its own.
+#   Actions tab -> Run workflow     -> pick any branch and that branch goes
+#                                      live instead, at the same address.
+#
+# There is only ever one live site, so deploying a branch overwrites whatever
+# was there. Run the workflow again on main to put the real game back.
+#
+# Two one-time settings make this work, both under the repo's Settings:
+#   Pages    -> Build and deployment -> Source: "GitHub Actions"
+#   Environments -> github-pages -> Deployment branches: "All branches"
+# Without the second one, deploying anything except main is refused.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read      # read the branch being deployed
+  pages: write        # publish it
+  id-token: write     # how the deploy step proves it really is this workflow
+
+# One deploy at a time. A second run waits its turn instead of clashing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Fetch the branch being deployed
+        uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # The game is already a plain static file, so the whole repo goes up as
+      # it stands. (.git and .github are left out for us.)
+      - name: Bundle the files
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Say which branch is now live
+        run: |
+          echo "### 🌙 Live now: \`${GITHUB_REF_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
