@@ -29,19 +29,40 @@ Anything that gets between the camera and him - a tree trunk, a boulder - turns
 ghostly so he is never lost behind it. In a fight the camera swings round to the
 side so you can see the two of them squaring up.
 
-## Turning on GitHub Pages
+## Publishing it
 
-One-time setup, done on github.com:
+The game is published by `.github/workflows/deploy.yml`, and there is one live
+site: https://luketeal.github.io/moonwood/
 
-1. Go to the repo → **Settings** → **Pages** (left sidebar)
-2. Under "Build and deployment", set **Source** to *Deploy from a branch*
-3. Pick the branch that has `index.html`, folder `/ (root)`
-4. Click **Save**, wait a minute or two, then open the link above
+- **Pushing to main** publishes main, on its own, a minute or so later.
+- **Testing a branch:** go to the repo's **Actions** tab, pick *Deploy to
+  GitHub Pages* on the left, hit **Run workflow**, choose the branch, and run
+  it. That branch is live at the same address in about half a minute.
+- **Putting it back:** run the same workflow again, on main.
+
+Deploying a branch overwrites whatever was live, so while a test branch is up,
+that is the game anyone opening the link gets. The workflow only offers
+branches that have the workflow file on them.
+
+### One-time setup on github.com
+
+Both of these are under the repo's **Settings**, and only need doing once:
+
+1. **Pages** → *Build and deployment* → set **Source** to **GitHub Actions**.
+   The branch dropdown disappears when you do, which is correct - deployments
+   are no longer tied to a branch.
+2. **Environments** → **github-pages** → *Deployment branches and tags* → set
+   it to **All branches**. Without this, GitHub refuses to deploy anything
+   except main and the run fails with "not allowed to deploy to github-pages
+   due to environment protection rules". (The environment only appears after
+   step 1, and possibly only after the first run.)
 
 ## The files
 
 - `index.html` — the whole game: layout, art, and code, all in one file
 - `.nojekyll` — tells GitHub to publish the file exactly as written
+- `.github/workflows/deploy.yml` — publishes the site, and lets you put any
+  branch live for testing
 
 ## Saving progress
 
