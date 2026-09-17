@@ -21,9 +21,14 @@ Open that link in **Safari or Chrome**. Tapping "Begin Adventure" starts the gam
 
 Three shards are hidden in each land, and the Star Gate hangs between them:
 
-- **🌲 Moonwood** - dark pines, fireflies and a cold river. Where he starts.
-- **🌾 Sunfield** - open country, tall grass, haystacks and warm wind.
-- **🏛️ The Ruins** - fallen halls, broken pillars and cold mist.
+- **🌲 Moonwood** - dark pines, fireflies, a cold river and the Great Pine.
+- **🌾 Sunfield** - open country, tall grass, haystacks and an old windmill.
+- **🏛️ The Ruins** - fallen halls, cold mist and a broken tower.
+
+Each land takes about twenty seconds to walk across and he can only see a
+quarter of one at a time, so there is always somewhere he has not been. Every
+land has one tall landmark you can see from anywhere in it - walk toward the
+tower and you will get there.
 
 Walking into the Star Gate in any land opens it up: pick a land and go. He can
 wander back and forth as often as he likes, in any order, and the gate shows how
@@ -33,6 +38,30 @@ Bring all nine back to the gate and the Gate Guardian wakes up. Beating it ends
 the game. Losing to it costs nothing - he wakes at the foot of the gate, healed,
 with the Guardian a little more worn down than before, and can walk straight
 back in.
+
+## Small finds
+
+Walking is worth something. Scattered through the lands:
+
+- **Moonberries** - a few health back. They grow again whenever he leaves a land
+  and comes back, so it is worth remembering where the bushes are
+- **Campfires** - full health, and a line about what happened here. Two to a
+  land, and they glow from a long way off
+- **Star seeds** - three hidden in each land. Each one is +1 maximum health,
+  forever
+- **Standing stones** - carved hints: where a shard is, or what a monster fears
+- **Swift boots** - one pair in each land. Each pair makes him permanently
+  quicker, so the more he explores the less the walking costs him
+- **Frogs, rabbits and bats** - they hop away from him and do nothing else
+
+None of it is needed to finish the game. The nine shards are the only thing
+that moves the story on, so nothing important can be missed.
+
+## Finding your way
+
+A compass sits above the buttons, pointing at the nearest shard he has not found
+in this land - or at the Star Gate once all three are his. It says "close" when
+he is nearly on top of it.
 
 ## Fights
 
@@ -130,7 +159,9 @@ Two things worth knowing:
 Everything is in `index.html`. Some easy things to change:
 
 - **The lands themselves** — `const LANDS`, one block each. Colours, size, what
-  grows there, where the gate stands
+  grows there, where the gate and the landmark stand. `w` and `h` are the size
+  of a land: raise or lower them and the scenery counts in `gen` together
+- **Berries, campfires, star seeds, stones and boots** — `const FINDS`
 - **Creature and monster names** — `const CREATURES` and `const MONSTERS`
 - **Where the shards are hidden** — `const SHARDS`
 - **What the moves do** — `const MOVES`: damage, healing, cooldown and kind
