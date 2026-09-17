@@ -1,8 +1,8 @@
 # Moonwood: The Lost Star
 
-A single-file browser game in 3-D. Walk the forest, meet four friendly
-creatures, battle four monsters, collect three Star Shards, and bring them back
-to the Star Gate.
+A single-file browser game in 3-D. Three lands, nine Star Shards, six creatures
+to find and ten monsters to beat - and then whatever it was that broke the Star
+Gate in the first place.
 
 The camera floats behind him and a good way above, looking down over his
 shoulder, so the forest has depth: trees and rocks stand up out of the ground,
@@ -17,13 +17,79 @@ https://luketeal.github.io/moonwood/
 
 Open that link in **Safari or Chrome**. Tapping "Begin Adventure" starts the game.
 
+## The three lands
+
+Three shards are hidden in each land, and the Star Gate hangs between them:
+
+- **🌲 Moonwood** - dark pines, fireflies, a cold river and the Great Pine.
+- **🌾 Sunfield** - open country, tall grass, haystacks and an old windmill.
+- **🏛️ The Ruins** - fallen halls, cold mist and a broken tower.
+
+Each land takes about twenty seconds to walk across and he can only see a
+quarter of one at a time, so there is always somewhere he has not been. Every
+land has one tall landmark you can see from anywhere in it - walk toward the
+tower and you will get there.
+
+Walking into the Star Gate in any land opens it up: pick a land and go. He can
+wander back and forth as often as he likes, in any order, and the gate shows how
+many shards he has found in each.
+
+Bring all nine back to the gate and the Gate Guardian wakes up. Beating it ends
+the game. Losing to it costs nothing - he wakes at the foot of the gate, healed,
+with the Guardian a little more worn down than before, and can walk straight
+back in.
+
+## Small finds
+
+Walking is worth something. Scattered through the lands:
+
+- **Moonberries** - a few health back. They grow again whenever he leaves a land
+  and comes back, so it is worth remembering where the bushes are
+- **Campfires** - full health, and a line about what happened here. Two to a
+  land, and they glow from a long way off
+- **Star seeds** - three hidden in each land. Each one is +1 maximum health,
+  forever
+- **Standing stones** - carved hints: where a shard is, or what a monster fears
+- **Swift boots** - one pair in each land. Each pair makes him permanently
+  quicker, so the more he explores the less the walking costs him
+- **Frogs, rabbits and bats** - they hop away from him and do nothing else
+
+None of it is needed to finish the game. The nine shards are the only thing
+that moves the story on, so nothing important can be missed.
+
+## Finding your way
+
+A compass sits above the buttons, pointing at the nearest shard he has not found
+in this land - or at the Star Gate once all three are his. It says "close" when
+he is nearly on top of it.
+
+## Fights
+
+Every creature he discovers teaches him a **move**, and each move has a kind -
+leaf, water, light, spark, stone or moon. Every monster is afraid of one kind
+and takes far more damage from it, so **the creatures of a land are the answer
+to the monsters of that land**. The monster's name plate says what it fears, and
+the move that beats it glows gold along the bottom of the screen.
+
+The moves do more than damage: Tide Rush heals him as it hits, Stone Smash
+leaves the monster too dazed to take its turn, Glimmer Guard shields him from
+the next blow. Each one then needs a turn or three to rest, so he cannot lean on
+one move forever. The Guardian says out loud when it is winding up something
+big, which is the moment to guard or heal.
+
+The monsters get steadily harder: the Moonwood three are gentle, Sunfield is a
+step up, the Ruins are hard work. Fainting is never a disaster - he wakes up
+safe with full health, and any damage he did to that monster stays done.
+
 ## The controls
 
 - **◀** and **▶** turn him left and right, and the camera swings round behind him
 - **▲** walks him forward, **▼** steps him back
-- **ACTION** looks at things, talks to Luna, picks up shards, and attacks
-- **ABILITY** uses a creature power in a fight
-- On a keyboard: arrow keys or WASD, space for ACTION, Q for ABILITY
+- **ACTION** looks at things, talks to Luna, picks up shards, and starts fights
+- **ABILITY** lists the moves his creatures have taught him
+- In a fight the walking buttons step aside and his moves appear along the bottom
+- On a keyboard: arrow keys or WASD, space for ACTION, Q for ABILITY, and keys
+  1-7 for moves in a fight
 
 Anything that gets between the camera and him - a tree trunk, a boulder - turns
 ghostly so he is never lost behind it. In a fight the camera swings round to the
@@ -67,8 +133,10 @@ Both of these are under the repo's **Settings**, and only need doing once:
 ## Saving progress
 
 The game saves itself automatically whenever something is earned - a shard picked
-up, a creature discovered, a monster beaten, a level gained - and shows a short
-"Progress saved" note when it does.
+up, a creature discovered, a monster beaten, a level gained, a land travelled to -
+and shows a short "Progress saved" note when it does. A save made before the
+three lands existed still loads: it keeps his level, his creatures and the shards
+he had, and sets him down in Moonwood.
 
 Next time the game is opened there are two buttons:
 
@@ -90,8 +158,15 @@ Two things worth knowing:
 
 Everything is in `index.html`. Some easy things to change:
 
-- **Creature and monster names** — search for `const creatures` and `const monsters`
-- **How tough monsters are** — the `hp` and `attack` numbers on each monster
+- **The lands themselves** — `const LANDS`, one block each. Colours, size, what
+  grows there, where the gate and the landmark stand. `w` and `h` are the size
+  of a land: raise or lower them and the scenery counts in `gen` together
+- **Berries, campfires, star seeds, stones and boots** — `const FINDS`
+- **Creature and monster names** — `const CREATURES` and `const MONSTERS`
+- **Where the shards are hidden** — `const SHARDS`
+- **What the moves do** — `const MOVES`: damage, healing, cooldown and kind
+- **How tough monsters are** — the `hp` and `attack` numbers on each monster, and
+  `weak` for the kind it fears
 - **Walking speed** — `speed:3.1` near the top, and `turn:.05` for how fast he turns
 - **Story text** — anything inside quotes in the `say(...)` lines
 - **The camera** — `const cam` near the middle of the file. `dist` is how far
