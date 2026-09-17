@@ -278,7 +278,7 @@ const LANDS=[
   blurb:'Dark pines, fireflies and a cold river.',
   landmark:{type:'pine',x:1800,y:900,name:'the Great Pine'},
   critter:'frog',
-  gen:{trees:380,treeSize:22,pines:true,rocks:44,tufts:700,border:260,berries:10,critters:14},
+  gen:{trees:380,treeSize:22,pines:true,rocks:44,tufts:700,border:260,berries:5,critters:14},
   paths:[{pts:'path',w:210,c:'#2f4739'},{pts:'river',w:140,c:'#2b5563'},{pts:'river',w:60,c:'#3d7d8d'}]},
 
  {id:'sunfield',name:'Sunfield',emoji:'🌾',w:4000,h:2800,
@@ -288,7 +288,7 @@ const LANDS=[
   blurb:'Open country, tall grass and warm wind.',
   landmark:{type:'mill',x:2300,y:1600,name:'the old windmill'},
   critter:'rabbit',
-  gen:{trees:64,treeSize:26,pines:false,rocks:20,tufts:1200,border:230,berries:10,critters:16,
+  gen:{trees:64,treeSize:26,pines:false,rocks:20,tufts:1200,border:230,berries:5,critters:16,
        props:[{type:'grass',n:480},{type:'flower',n:600},{type:'hay',n:60},{type:'bale',n:72}]},
   paths:[{pts:'track',w:176,c:'#6a6134'}]},
 
@@ -299,7 +299,7 @@ const LANDS=[
   blurb:'Fallen halls, cold mist and older things.',
   landmark:{type:'tower',x:2400,y:1400,name:'the broken tower'},
   critter:'bat',
-  gen:{trees:56,treeSize:24,pines:false,dead:true,rocks:56,tufts:480,border:230,berries:8,critters:12,
+  gen:{trees:56,treeSize:24,pines:false,dead:true,rocks:56,tufts:480,border:230,berries:4,critters:12,
        props:[{type:'column',n:104},{type:'fallen',n:72},{type:'arch',n:28},{type:'rubble',n:136}]},
   paths:[{pts:'avenue',w:240,c:'#3d4048'},{pts:'avenue',w:192,c:'#474a54'}]}
 ];
@@ -361,8 +361,8 @@ function buildLand(L){
  }
  // Four of them close to the main route through the land. Scattering alone left
  // the road he actually walks down empty, and an empty road feels twice as long.
- for(let i=0;i<4;i++){
-  const x=L.w*(.17+i*.21), y=L.h/2+((i%2)?185:-200);
+ for(let i=0;i<3;i++){
+  const x=L.w*(.2+i*.28), y=L.h/2+((i%2)?185:-200);
   if(free(x,y,150))L.berries.push({id:L.id+'_road'+i,x:x,y:y});
  }
  // Frogs, rabbits and bats. They hop away from him and do nothing else at all.
@@ -576,7 +576,7 @@ function update(){
  if(keys.right)p.a+=p.turn;
  const drive=(keys.up?1:0)-(keys.down?.6:0);
  if(drive){
-   const sp=p.speed*(1+.06*p.boots);
+   const sp=p.speed*(1+.12*p.boots);
    const dx=Math.cos(p.a)*sp*drive, dy=Math.sin(p.a)*sp*drive;
    const nx=p.x+dx, ny=p.y+dy;
    if(!blocked(nx,p.y))p.x=nx;
@@ -611,14 +611,14 @@ function updateHUD(){
  document.getElementById('hp').textContent=p.hp+'/'+p.maxHp;
  document.getElementById('power').textContent=p.power;
  document.getElementById('area').textContent=land().name;
- // The compass. The arrow glyph points right when it is not rotated, so it is
- // turned a quarter circle further to make "straight up" mean "straight ahead".
+ // The compass. The arrow glyph points RIGHT when it is not rotated, so a
+ // quarter turn anticlockwise is what makes "up" mean "straight ahead".
  const L=land(), t=L.shards.find(sh=>!picked.has(sh.id))||L.gate;
  const gone=Math.hypot(t.x-p.x,t.y-p.y);
  document.getElementById('ctarget').textContent=
    (t===L.gate?'Star Gate':'Star Shard')+(gone<260?' - right here':gone<900?' - close':'');
  document.getElementById('carrow').style.transform=
-   'rotate('+(Math.atan2(t.y-p.y,t.x-p.x)-cam.yaw+Math.PI/2)+'rad)';
+   'rotate('+(Math.atan2(t.y-p.y,t.x-p.x)-cam.yaw-Math.PI/2)+'rad)';
 }
 
 /* ---------------------------------------------------------------------------
@@ -662,7 +662,7 @@ function baseAction(){
    if(f.type==='boots'){
      if(found.has(f.id))continue;
      found.add(f.id);p.boots++;updateHUD();
-     say('Swift Boots','Someone left these by the path, and they fit. You walk quicker now - and quicker still if you find another pair.');
+     say('Swift Boots','Someone left these by the path, and they fit. You are '+Math.round(p.boots*12)+'% quicker than you started - and quicker still if you find the other pairs.');
      saveGame();return;
    }
    if(f.type==='fire'){
