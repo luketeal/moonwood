@@ -285,8 +285,18 @@ export function createRenderer(canvas, opts) {
     return top + (bot - top) * sy;
   }
 
+  /* Each sheet gets its OWN texture. `offset` lives on the texture, not on the
+     material, so four sheets sharing one texture were writing the same offset
+     over each other every frame and all drifting as one - which meant their
+     aliasing lined up perfectly instead of averaging out, and the whole thing
+     flickered. They share the underlying image, so it is still one upload. */
   let mistTex = null;
   function mistTexture() {
+    if (mistTex) return mistTexture0().clone();
+    mistTex = mistTexture0();
+    return mistTex.clone();
+  }
+  function mistTexture0() {
     if (mistTex) return mistTex;
     const N = 256;
     const c = document.createElement('canvas');
@@ -295,13 +305,15 @@ export function createRenderer(canvas, opts) {
     const img = ctx2.createImageData(N, N);
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
-        let v = 0, amp = 1, tot = 0, freq = 3;
-        for (let o = 0; o < 4; o++) {
+        // Three octaves from a coarse base. The fourth octave was finer than a
+        // screen pixel at this distance and only ever turned into shimmer.
+        let v = 0, amp = 1, tot = 0, freq = 2;
+        for (let o = 0; o < 3; o++) {
           v += wrapNoise(i / N * freq, j / N * freq, freq) * amp;
-          tot += amp; amp *= .55; freq *= 2;
+          tot += amp; amp *= .5; freq *= 2;
         }
         v /= tot;
-        const a = Math.max(0, Math.min(1, (v - .40) * 2.4));
+        const a = Math.max(0, Math.min(1, (v - .42) * 2.2));
         const k = (j * N + i) * 4;
         img.data[k] = img.data[k + 1] = img.data[k + 2] = 255;
         img.data[k + 3] = a * a * 255;      // squared, so the thin parts thin out
@@ -310,7 +322,10 @@ export function createRenderer(canvas, opts) {
     ctx2.putImageData(img, 0, 0);
     mistTex = new THREE.CanvasTexture(c);
     mistTex.wrapS = mistTex.wrapT = THREE.RepeatWrapping;
-    mistTex.repeat.set(2, 2);
+    mistTex.repeat.set(1.4, 1.4);
+    // Looked at along its length, a flat sheet squashes a lot of texture into
+    // very few pixels. Without this it sparkles.
+    mistTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return mistTex;
   }
 
@@ -404,11 +419,6 @@ export function createRenderer(canvas, opts) {
     windMats.push(mat);
     return mat;
   }
-
-  const ghostMat = new THREE.MeshBasicMaterial({
-    color: 0x9d8ae8, transparent: true, opacity: 0,
-    depthTest: false, depthWrite: false, fog: false
-  });
 
   const builtLands = {};
   const dummy = new THREE.Object3D();
@@ -676,21 +686,6 @@ export function createRenderer(canvas, opts) {
 
     A.player = W.buildPlayer();
     land.root.add(A.player);
-
-    /* And a flat copy of him drawn over the top of everything. It shows only
-       when the camera has run out of ways to see him - the Ruins have a hundred
-       columns in them and he is forever standing beside one, and no camera
-       angle gets round something that is effectively in the same spot he is. */
-    A.ghost = W.buildPlayer();
-    A.ghost.traverse(o => {
-      if (!o.isMesh) return;
-      o.material = ghostMat;
-      o.castShadow = o.receiveShadow = false;
-      o.renderOrder = 20;
-    });
-    A.ghost.visible = false;
-    land.root.add(A.ghost);
-
     A.luna = null;
     A.creatures = {}; A.monsters = {}; A.critters = []; A.shards = {}; A.finds = {}; A.berries = {};
 
@@ -741,12 +736,10 @@ export function createRenderer(canvas, opts) {
   ------------------------------------------------------------------------- */
   let camPull = 1e4;          // how far back the scenery is letting the camera sit
   let camLift = 0;            // and how far it has had to climb to see over it
-  let hidden = false;         // and whether, after all that, he is still behind something
   // Filled in every frame for debug(); mutated rather than rebuilt, because
   // this runs in the middle of the frame and a fresh object each time is
   // rubbish for the collector to clear up sixty times a second.
-  const camWhy = { dist: 0, allow: 0, want: 0, lift: 0, hidden: false, blockedBy: 0 };
-  let ghostFade = 0;
+  const camWhy = { dist: 0, allow: 0, want: 0, lift: 0, blockedBy: 0 };
 
   function placeCamera(s) {
     const cam = s.cam, p = s.p, dt = s.dt || 1;
@@ -785,18 +778,17 @@ export function createRenderer(canvas, opts) {
 
       if (along > dist - 95 && along < dist - 8) {
         /* Standing beside him. Coming closer cannot get round it, so the camera
-           climbs and looks over the top instead - and if it is still covering
-           him after that, the flat copy of him is drawn over it.
+           climbs and looks down over the top of it instead.
 
            It has to be squarely in front of him, not merely clipping his
            shoulder: in a wood something is ALWAYS clipping his shoulder, and a
            looser test had the camera bobbing and the silhouette flickering the
            whole way through Moonwood. It also has to be BETWEEN the camera and
            him - a tree a few paces behind him hides nothing, and counting those
-           was what actually kept the silhouette on in open country. */
+           had the camera climbing the whole way through open country. */
         if (side > t.r * .75) continue;
         camWhy.blockedBy++;
-        want = Math.max(want, Math.min(95, (t.top - lookZ) * .8));
+        want = Math.max(want, Math.min(110, (t.top - lookZ) * .9));
       } else if (along <= dist - 90) {
         // Further off: something beside the camera covers far more of the screen
         // than the same thing next to him, so "in the way" widens with nearness.
@@ -805,10 +797,8 @@ export function createRenderer(canvas, opts) {
       }
     }
     camLift += (want - camLift) * (1 - Math.pow(1 - (want > camLift ? .12 : .045), dt));
-    hidden = (allow < dist - 4) || want > 18;
     camWhy.dist = Math.round(dist); camWhy.allow = Math.round(allow);
-    if (!hidden) camWhy.blockedBy = 0;
-    camWhy.want = Math.round(want); camWhy.lift = Math.round(camLift); camWhy.hidden = hidden;
+    camWhy.want = Math.round(want); camWhy.lift = Math.round(camLift);
     // Never closer than a bit over half way in. Past that the cure is worse than
     // the tree: a camera in his pocket is more disorienting than a branch.
     allow = Math.max(dist * .55, allow);
@@ -917,22 +907,6 @@ export function createRenderer(canvas, opts) {
       u.arms[1].rotation.z = step * .45;
       u.cloak.position.y = 36 + Math.abs(step) * 1.6;
       u.cloak.rotation.z = Math.sin(s.p.bob * .5) * .05;
-    }
-
-    // The flat copy follows him exactly, and fades in only when he is lost.
-    {
-      const g = A.ghost, dt = s.dt || 1;
-      g.position.copy(A.player.position);
-      g.rotation.copy(A.player.rotation);
-      for (let i = 0; i < A.player.children.length; i++) {
-        const a = A.player.children[i], b = g.children[i];
-        if (!b) break;
-        b.position.copy(a.position); b.rotation.copy(a.rotation);
-      }
-      const want = hidden ? .45 : 0;
-      ghostFade += (want - ghostFade) * (1 - Math.pow(1 - (want > ghostFade ? .16 : .09), dt));
-      g.visible = ghostFade > .01;
-      ghostMat.opacity = ghostFade;
     }
 
     // Luna waits in Moonwood.
@@ -1169,7 +1143,6 @@ export function createRenderer(canvas, opts) {
     const out = {
       land: curId, water: null, objects: 0, quality: quality,
       drawCalls: stat.draws, triangles: stat.tris, buildMs: stat.buildMs, cam: camWhy,
-      ghostFade: +ghostFade.toFixed(3), ghostOpacity: +ghostMat.opacity.toFixed(3),
       geometries: i.memory.geometries, textures: i.memory.textures,
       programs: i.programs ? i.programs.length : 0
     };

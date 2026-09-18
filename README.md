@@ -92,9 +92,10 @@ safe with full health, and any damage he did to that monster stays done.
   1-7 for moves in a fight
 
 If anything tall gets between the camera and him - a tree, a standing column -
-the camera slips past it. If it is too close for that to help, the camera climbs
-and looks over the top. And if it is squarely on top of him even then, a flat
-copy of him is drawn over it, so he is never lost behind anything.
+the camera slips past it, and if it is too close for that to help, it climbs and
+looks down over the top instead. Something standing right at his shoulder cannot
+be got round by either, and is left alone: it passes in a step or two, and the
+cures for it are more distracting than the problem.
 
 The edge of each land is a raised bank. He is stopped a little short of it, and
 without something to see there, "you cannot go that way" and "you have walked
