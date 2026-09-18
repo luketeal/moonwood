@@ -5,9 +5,9 @@ to find and ten monsters to beat - and then whatever it was that broke the Star
 Gate in the first place.
 
 The camera floats behind him and a good way above, looking down over his
-shoulder, so the forest has depth: trees and rocks stand up out of the ground,
-things shrink as they get further away, and the Star Gate is a real archway you
-can see from across the wood.
+shoulder. The world is real 3-D: the ground rolls, the river runs in a channel
+it has cut for itself, the trees are solid things you can walk round, and one
+low moon lights all of it and lays every shadow on the ground.
 
 ## Play it
 
@@ -91,9 +91,9 @@ safe with full health, and any damage he did to that monster stays done.
 - On a keyboard: arrow keys or WASD, space for ACTION, Q for ABILITY, and keys
   1-7 for moves in a fight
 
-Anything that gets between the camera and him - a tree trunk, a boulder - turns
-ghostly so he is never lost behind it. In a fight the camera swings round to the
-side so you can see the two of them squaring up.
+If a tree gets between the camera and him the camera slips past it, so he is
+never lost behind anything. In a fight he takes a step back and the camera
+swings round to the side, so you can see the two of them squaring up.
 
 ## Publishing it
 
@@ -123,10 +123,36 @@ Both of these are under the repo's **Settings**, and only need doing once:
    due to environment protection rules". (The environment only appears after
    step 1, and possibly only after the first run.)
 
+## How it is drawn
+
+The picture is WebGL, through three.js. There is no artwork to download: every
+tree, rock, creature and archway is built out of cones, cylinders and spheres
+when a land is first walked into, and each land takes about a tenth of a second
+to build. What makes it look like anything is the lighting, not the models:
+
+- **One moon**, low and cold, casting real shadows that fall the way the moon
+  says they should
+- **Distance**, which eats colour, so far trees go blue and soft and the wood
+  feels bigger than the screen
+- **A bloom pass**, which spills light from anything brighter than daylight -
+  shards, campfires, fireflies, the gate, the moon itself
+- **The sky reflected**, baked once per land, which is what puts a moon on the
+  river and a little cold light on everything else
+
+### If it runs slowly
+
+The game watches its own frame rate and quietly steps down if it cannot keep
+up - shadows go first, then the glow. You can also force a setting by adding
+`?gfx=low`, `?gfx=med` or `?gfx=high` to the address.
+
 ## The files
 
-- `index.html` — the whole game: layout, art, and code, all in one file
-- `.nojekyll` — tells GitHub to publish the file exactly as written
+- `index.html` — the game: layout, the world, and all the rules
+- `render3d.js` — the camera, the light, the weather and the order of things
+- `world3d.js` — the shapes everything is built from, and the lie of the land
+- `vendor/` — three.js and the four post-processing passes, kept in the repo so
+  the game never depends on anyone else's server staying up
+- `.nojekyll` — tells GitHub to publish the files exactly as written
 - `.github/workflows/deploy.yml` — publishes the site, and lets you put any
   branch live for testing
 
@@ -156,7 +182,7 @@ Two things worth knowing:
 
 ## Editing the game
 
-Everything is in `index.html`. Some easy things to change:
+The world and the rules are in `index.html`. Some easy things to change:
 
 - **The lands themselves** — `const LANDS`, one block each. Colours, size, what
   grows there, where the gate and the landmark stand. `w` and `h` are the size
@@ -169,10 +195,20 @@ Everything is in `index.html`. Some easy things to change:
   `weak` for the kind it fears
 - **Walking speed** — `speed:3.1` near the top, and `turn:.05` for how fast he turns
 - **Story text** — anything inside quotes in the `say(...)` lines
-- **The camera** — `const cam` near the middle of the file. `dist` is how far
-  behind him it sits, `height` how high above, and `aim` the height it points
-  at. Raise `height` for more of a bird's eye view, lower it to stand closer
-  behind his shoulder.
+- **The camera** — `const cam`, near the bottom of `index.html`. `dist` is how
+  far behind him it sits, `height` how high above, and `aim` the height it
+  points at. Raise `height` for more of a bird's eye view, lower it to stand
+  closer behind his shoulder.
+
+How it all looks is in the other two files:
+
+- **The light, the fog and the glow** — the top of `render3d.js`. The moon's
+  strength and colour, how fast distance eats the picture, and how much the
+  bright things bloom
+- **What the shapes are** — `world3d.js`. A pine is a few cones on a cylinder;
+  make it five cones and it is a different wood
+- **The lie of the land** — `makeTerrain` in `world3d.js`: how much the ground
+  rolls, how deep the river cuts, and how worn the paths are
 
 ## If the screen is stuck on the start card
 
