@@ -53,7 +53,7 @@ const MOOD = {
   ruins: {             // high, colourless and smothered
     az: 2.10, el: 0.75, key: 0x9db4d8, keyI: 2.1, moonCol: [0.86, 0.90, 0.98], moonGain: 4.0,
     hemiSky: 0x3d4c68, hemiGnd: 0x2c2b2f, hemiI: 1.55, rim: 0x55647e, rimI: 0.55,
-    fog: 0.00175, exposure: 1.27, wind: 0.1, undergrowth: 0.55, mist: 1
+    fog: 0.00145, exposure: 1.27, wind: 0.1, undergrowth: 0.55, mist: 1
   }
 };
 const KEY = new THREE.Vector3();          // which way the moonlight comes from, now
@@ -250,50 +250,102 @@ export function createRenderer(canvas, opts) {
   /* -------------------------------------------------------------------------
      MIST
 
-     Five big sheets of cloud lying flat at about knee and waist height, drifting
-     at different speeds and turning against each other. They travel with the
-     camera, so he is always walking through them rather than up to them. It is
-     the cheapest thing in this whole file and it does more for the Ruins than
-     anything else in it.
+     Four sheets of cloud lying flat between knee and head height, travelling
+     with the camera so he walks through them rather than up to them.
+
+     Two things matter, and both were wrong the first time:
+
+     The cloud is seamless noise, not a scatter of soft round blobs. Blobs at
+     this scale read as exactly what they are - blobs - and the whole thing
+     looked like spilled milk rather than mist.
+
+     And there is a CLEAR BUBBLE around him, baked into the corners of each
+     sheet as an alpha that starts at nothing overhead and thickens with
+     distance. The Ruins are full of rubble he has to walk round, and mist that
+     hides what is at his feet is not atmosphere, it is a blindfold. So the mist
+     lives in the middle distance, where it does the work, and never between him
+     and the next stone.
   ------------------------------------------------------------------------- */
+  const MIST_SIZE = 2400, MIST_CLEAR = 300;
+
+  // Value noise that wraps, so the sheet tiles without a seam to catch the eye.
+  function wrapNoise(x, y, period) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const fx = x - xi, fy = y - yi;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const at = (a, b) => {
+      a = ((a % period) + period) % period;
+      b = ((b % period) + period) % period;
+      let v = (Math.imul(a, 374761393) + Math.imul(b, 668265263)) | 0;
+      v = Math.imul(v ^ (v >>> 13), 1274126177);
+      return ((v ^ (v >>> 16)) >>> 0) / 4294967296;
+    };
+    const p00 = at(xi, yi), p10 = at(xi + 1, yi), p01 = at(xi, yi + 1), p11 = at(xi + 1, yi + 1);
+    const top = p00 + (p10 - p00) * sx, bot = p01 + (p11 - p01) * sx;
+    return top + (bot - top) * sy;
+  }
+
   let mistTex = null;
   function mistTexture() {
     if (mistTex) return mistTex;
+    const N = 256;
     const c = document.createElement('canvas');
-    c.width = c.height = 256;
-    const x = c.getContext('2d');
-    for (let i = 0; i < 90; i++) {
-      const px = (i * 97.3) % 256, py = (i * 151.7) % 256, r = 16 + (i * 37) % 44;
-      const g = x.createRadialGradient(px, py, 0, px, py, r);
-      g.addColorStop(0, 'rgba(255,255,255,0.22)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      x.fillStyle = g;
-      x.beginPath(); x.arc(px, py, r, 0, 6.3); x.fill();
+    c.width = c.height = N;
+    const ctx2 = c.getContext('2d');
+    const img = ctx2.createImageData(N, N);
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        let v = 0, amp = 1, tot = 0, freq = 3;
+        for (let o = 0; o < 4; o++) {
+          v += wrapNoise(i / N * freq, j / N * freq, freq) * amp;
+          tot += amp; amp *= .55; freq *= 2;
+        }
+        v /= tot;
+        const a = Math.max(0, Math.min(1, (v - .40) * 2.4));
+        const k = (j * N + i) * 4;
+        img.data[k] = img.data[k + 1] = img.data[k + 2] = 255;
+        img.data[k + 3] = a * a * 255;      // squared, so the thin parts thin out
+      }
     }
-    // Fade the sheet away at its own edges, so you never see where it stops.
-    x.globalCompositeOperation = 'destination-in';
-    const e = x.createRadialGradient(128, 128, 26, 128, 128, 126);
-    e.addColorStop(0, 'rgba(255,255,255,1)');
-    e.addColorStop(1, 'rgba(255,255,255,0)');
-    x.fillStyle = e; x.fillRect(0, 0, 256, 256);
+    ctx2.putImageData(img, 0, 0);
     mistTex = new THREE.CanvasTexture(c);
+    mistTex.wrapS = mistTex.wrapT = THREE.RepeatWrapping;
+    mistTex.repeat.set(2, 2);
     return mistTex;
   }
 
+  // One sheet: flat, with the clear bubble written into its corners.
+  function mistSheet() {
+    const geo = new THREE.PlaneGeometry(MIST_SIZE, MIST_SIZE, 28, 28);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    const col = new Float32Array(pos.count * 4);
+    const half = MIST_SIZE / 2;
+    const ease = t => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+    for (let i = 0; i < pos.count; i++) {
+      const d = Math.hypot(pos.getX(i), pos.getZ(i));
+      const near = ease((d - MIST_CLEAR) / 340);       // nothing close to him
+      const far = 1 - ease((d - (half - 420)) / 420);  // and nothing at the rim
+      col[i * 4] = col[i * 4 + 1] = col[i * 4 + 2] = 1;
+      col[i * 4 + 3] = near * far;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      map: mistTexture(), color: 0xc6d1e0, vertexColors: true,
+      transparent: true, opacity: .1, depthWrite: false, side: THREE.DoubleSide
+    }));
+  }
+
   const mist = { group: new THREE.Group(), sheets: [] };
-  for (let i = 0; i < 5; i++) {
-    const sheet = new THREE.Mesh(
-      new THREE.PlaneGeometry(1900, 1900),
-      new THREE.MeshBasicMaterial({
-        map: mistTexture(), color: 0xc3cede, transparent: true, opacity: .06,
-        depthWrite: false, side: THREE.DoubleSide
-      })
-    );
-    sheet.rotation.x = -Math.PI / 2;
-    sheet.position.y = 26 + i * 24;
+  for (let i = 0; i < 4; i++) {
+    const sheet = mistSheet();
+    sheet.position.y = 34 + i * 29;
     sheet.renderOrder = 3;
+    sheet.frustumCulled = false;
     mist.group.add(sheet);
-    mist.sheets.push({ m: sheet, spin: (i % 2 ? 1 : -1) * (.006 + i * .004), drift: 26 + i * 15 });
+    // Each sheet drifts by sliding its texture, not by moving - so the clear
+    // bubble stays put over him while the cloud itself travels.
+    mist.sheets.push({ m: sheet, spin: (i % 2 ? 1 : -1) * (.004 + i * .003), dx: .004 + i * .0025, dy: .003 - i * .0011 });
   }
   mist.group.visible = false;
   scene.add(mist.group);
@@ -352,6 +404,11 @@ export function createRenderer(canvas, opts) {
     windMats.push(mat);
     return mat;
   }
+
+  const ghostMat = new THREE.MeshBasicMaterial({
+    color: 0x9d8ae8, transparent: true, opacity: 0,
+    depthTest: false, depthWrite: false, fog: false
+  });
 
   const builtLands = {};
   const dummy = new THREE.Object3D();
@@ -485,7 +542,30 @@ export function createRenderer(canvas, opts) {
     const flies = buildFireflies(L, terrain);
     root.add(flies.points);
 
-    const land = { root, terrain, landmark, gate, flies, water, actors: {} };
+    /* Everything tall enough to come between the camera and him. Worked out
+       once here rather than every frame, and - the point of the exercise - it
+       is no longer only the trees. The Ruins have barely a tree in them and a
+       hundred standing columns, and the camera was walking straight through
+       every one of them. */
+    const blockers = [];
+    for (const t of L.trees) {
+      blockers.push({
+        x: t.x, y: t.y, r: t.s * .7 + 18,
+        top: terrain.height(t.x, t.y) + t.s * (t.dead ? 3.6 : t.pine ? 4.6 : 3.6)
+      });
+    }
+    for (const o of L.props) {
+      const base = o.type === 'column' ? 120 : o.type === 'arch' ? 170 : o.type === 'hay' ? 75 : 0;
+      if (!base) continue;
+      const n = ((o.x * 7 + o.y * 13) % 100) / 100;
+      const tall = o.type === 'column' ? .55 + n * .8 : 1;
+      blockers.push({
+        x: o.x, y: o.y, r: (o.type === 'arch' ? 50 : o.type === 'hay' ? 32 : 24) * o.s + 16,
+        top: terrain.height(o.x, o.y) + base * o.s * tall
+      });
+    }
+
+    const land = { root, terrain, landmark, gate, flies, water, blockers, actors: {} };
     buildActors(L, land);
     scene.add(root);
     root.visible = false;
@@ -502,8 +582,10 @@ export function createRenderer(canvas, opts) {
      actually moves with them.
   ------------------------------------------------------------------------- */
   function buildWater(L) {
-    const apron = 1600;
-    const geo = new THREE.PlaneGeometry(L.w + apron * 2, L.h + apron * 2, 150, 110);
+    // Only as far as the land goes. Past the boundary the ground drops away by
+    // design, and a sheet that reached out there would pour over the lip and
+    // flood the whole apron.
+    const geo = new THREE.PlaneGeometry(L.w + 200, L.h + 200, 130, 96);
     geo.rotateX(-Math.PI / 2);
     const mat = new THREE.MeshStandardMaterial({
       color: 0x2a6480, roughness: .46, metalness: .08,
@@ -595,6 +677,20 @@ export function createRenderer(canvas, opts) {
     A.player = W.buildPlayer();
     land.root.add(A.player);
 
+    /* And a flat copy of him drawn over the top of everything. It shows only
+       when the camera has run out of ways to see him - the Ruins have a hundred
+       columns in them and he is forever standing beside one, and no camera
+       angle gets round something that is effectively in the same spot he is. */
+    A.ghost = W.buildPlayer();
+    A.ghost.traverse(o => {
+      if (!o.isMesh) return;
+      o.material = ghostMat;
+      o.castShadow = o.receiveShadow = false;
+      o.renderOrder = 20;
+    });
+    A.ghost.visible = false;
+    land.root.add(A.ghost);
+
     A.luna = null;
     A.creatures = {}; A.monsters = {}; A.critters = []; A.shards = {}; A.finds = {}; A.berries = {};
 
@@ -643,7 +739,14 @@ export function createRenderer(canvas, opts) {
      that it is pointed the right way and pulled in if a tree gets between it and
      him, which is the one thing that would otherwise leave him hidden.
   ------------------------------------------------------------------------- */
-  let camPull = 1e4;          // how far back the trees are letting the camera sit
+  let camPull = 1e4;          // how far back the scenery is letting the camera sit
+  let camLift = 0;            // and how far it has had to climb to see over it
+  let hidden = false;         // and whether, after all that, he is still behind something
+  // Filled in every frame for debug(); mutated rather than rebuilt, because
+  // this runs in the middle of the frame and a fresh object each time is
+  // rubbish for the collector to clear up sixty times a second.
+  const camWhy = { dist: 0, allow: 0, want: 0, lift: 0, hidden: false, blockedBy: 0 };
+  let ghostFade = 0;
 
   function placeCamera(s) {
     const cam = s.cam, p = s.p, dt = s.dt || 1;
@@ -660,25 +763,52 @@ export function createRenderer(canvas, opts) {
     const eyeZ = cam.z;
     const lookZ = (gnd ? gnd.height(tx, ty) : 0) + (s.battle ? 32 : cam.aim);
 
-    let allow = dist;
-    const trees = s.L.trees;
-    for (let i = 0; i < trees.length; i++) {
-      const t = trees[i];
+    /* One pass over everything tall enough to matter. Each one is measured
+       along the camera's line of sight (`along`) and across it (`side`), so the
+       only things considered are the ones genuinely between the camera and what
+       it is looking at - being merely NEAR him is not the same as being in the
+       way, and treating it as such had the silhouette showing in open country. */
+    let allow = dist, want = 0;
+    camWhy.blockedBy = 0;
+    const blockers = curLand ? curLand.blockers : [];
+    for (let i = 0; i < blockers.length; i++) {
+      const t = blockers[i];
       const rx = t.x - cam.x, ry = t.y - cam.y;
       const along = rx * bx + ry * by;
-      if (along < 40 || along > dist - 30) continue;
-      // A tree beside the camera covers far more of the screen than one the
-      // same width standing next to him, so what counts as "in the way" widens
-      // the closer to the camera it is.
-      const near = 1 - along / dist;
-      if (Math.abs(rx * by - ry * bx) > t.s * .7 + 18 + 40 * near) continue;
-      // The camera looks DOWN from well above his head, so most trees pass
-      // harmlessly underneath the line of sight. Only one tall enough to break
-      // that line is actually in the way.
-      const sight = eyeZ + (lookZ - eyeZ) * (along / dist);
-      const top = (gnd ? gnd.height(t.x, t.y) : 0) + t.s * (t.pine ? 4.6 : 3.6);
-      if (top > sight) allow = Math.min(allow, along - 26);
+      if (along < 40 || along > dist + 50) continue;
+      const side = Math.abs(rx * by - ry * bx);
+
+      // The camera looks DOWN from well above his head, so most things pass
+      // harmlessly under the line of sight. Only something tall enough to break
+      // it is really in the way.
+      if (t.top <= eyeZ + (lookZ - eyeZ) * (Math.min(along, dist) / dist)) continue;
+
+      if (along > dist - 95 && along < dist - 8) {
+        /* Standing beside him. Coming closer cannot get round it, so the camera
+           climbs and looks over the top instead - and if it is still covering
+           him after that, the flat copy of him is drawn over it.
+
+           It has to be squarely in front of him, not merely clipping his
+           shoulder: in a wood something is ALWAYS clipping his shoulder, and a
+           looser test had the camera bobbing and the silhouette flickering the
+           whole way through Moonwood. It also has to be BETWEEN the camera and
+           him - a tree a few paces behind him hides nothing, and counting those
+           was what actually kept the silhouette on in open country. */
+        if (side > t.r * .75) continue;
+        camWhy.blockedBy++;
+        want = Math.max(want, Math.min(95, (t.top - lookZ) * .8));
+      } else if (along <= dist - 90) {
+        // Further off: something beside the camera covers far more of the screen
+        // than the same thing next to him, so "in the way" widens with nearness.
+        if (side > t.r + 40 * (1 - along / dist)) continue;
+        allow = Math.min(allow, along - 26);
+      }
     }
+    camLift += (want - camLift) * (1 - Math.pow(1 - (want > camLift ? .12 : .045), dt));
+    hidden = (allow < dist - 4) || want > 18;
+    camWhy.dist = Math.round(dist); camWhy.allow = Math.round(allow);
+    if (!hidden) camWhy.blockedBy = 0;
+    camWhy.want = Math.round(want); camWhy.lift = Math.round(camLift); camWhy.hidden = hidden;
     // Never closer than a bit over half way in. Past that the cure is worse than
     // the tree: a camera in his pocket is more disorienting than a branch.
     allow = Math.max(dist * .55, allow);
@@ -692,7 +822,7 @@ export function createRenderer(canvas, opts) {
     const cx = tx - bx * use, cy = ty - by * use;
 
     const under = curLand ? curLand.terrain.height(cx, cy) : 0;
-    const cz = Math.max(cam.z, under + 46);
+    const cz = Math.max(cam.z, under + 46) + camLift;
     camera.position.set(cx, cz, cy);
 
     // Pointed AT what it is framing, rather than along a fixed heading. The flat
@@ -758,10 +888,9 @@ export function createRenderer(canvas, opts) {
       const mx = camera.position.x, mz = camera.position.z;
       mist.group.position.set(mx, gh0(mx, mz), mz);
       for (const sh of mist.sheets) {
-        sh.m.rotation.z = t * sh.spin;
-        sh.m.position.x = Math.sin(t * .07) * sh.drift;
-        sh.m.position.z = Math.cos(t * .05) * sh.drift;
-        sh.m.material.opacity = mood.mist * (.052 + Math.sin(t * .23 + sh.drift) * .014);
+        sh.m.rotation.y = t * sh.spin;
+        sh.m.material.map.offset.set(t * sh.dx, t * sh.dy);
+        sh.m.material.opacity = mood.mist * (.115 + Math.sin(t * .21 + sh.dx * 900) * .03);
       }
     }
 
@@ -788,6 +917,22 @@ export function createRenderer(canvas, opts) {
       u.arms[1].rotation.z = step * .45;
       u.cloak.position.y = 36 + Math.abs(step) * 1.6;
       u.cloak.rotation.z = Math.sin(s.p.bob * .5) * .05;
+    }
+
+    // The flat copy follows him exactly, and fades in only when he is lost.
+    {
+      const g = A.ghost, dt = s.dt || 1;
+      g.position.copy(A.player.position);
+      g.rotation.copy(A.player.rotation);
+      for (let i = 0; i < A.player.children.length; i++) {
+        const a = A.player.children[i], b = g.children[i];
+        if (!b) break;
+        b.position.copy(a.position); b.rotation.copy(a.rotation);
+      }
+      const want = hidden ? .45 : 0;
+      ghostFade += (want - ghostFade) * (1 - Math.pow(1 - (want > ghostFade ? .16 : .09), dt));
+      g.visible = ghostFade > .01;
+      ghostMat.opacity = ghostFade;
     }
 
     // Luna waits in Moonwood.
@@ -1023,7 +1168,8 @@ export function createRenderer(canvas, opts) {
     const i = renderer.info;
     const out = {
       land: curId, water: null, objects: 0, quality: quality,
-      drawCalls: stat.draws, triangles: stat.tris, buildMs: stat.buildMs,
+      drawCalls: stat.draws, triangles: stat.tris, buildMs: stat.buildMs, cam: camWhy,
+      ghostFade: +ghostFade.toFixed(3), ghostOpacity: +ghostMat.opacity.toFixed(3),
       geometries: i.memory.geometries, textures: i.memory.textures,
       programs: i.programs ? i.programs.length : 0
     };

@@ -108,6 +108,20 @@ export function makeTerrain(L, curveOf) {
       const d = distToLine(x, y, carve.pts);
       if (d < r) { const t = smooth(1 - d / r); h -= t * t * 54; }
     }
+    /* And at the edge of the land the ground rises into a bank. He is stopped
+       about forty paces short of the boundary, and until now nothing said so -
+       he simply stopped walking, which in mist is indistinguishable from having
+       hit a stone he could not see.
+
+       It rises rather than falls on purpose. Ground that drops away is almost
+       invisible from a camera looking down over his shoulder - you simply see
+       over it - whereas ground that rises stands between him and the distance
+       and reads as a wall at a glance. The border trees end up along the top of
+       it, which is what a real field boundary looks like anyway.
+
+       Applied last, so a path running out to the edge cannot flatten it away. */
+    const edge = Math.max(-x, x - L.w, -y, y - L.h) + 38;
+    if (edge > 0) h += smooth(Math.min(1, edge / 130)) * 95;
     return h;
   }
 
@@ -150,11 +164,24 @@ export function makeTerrain(L, curveOf) {
     }
     // The lip of the river channel is bare and pale, the way a bank really is.
     if (carve && h < -6) out.lerp(bank, Math.min(.7, (-6 - h) / 30));
+
+    /* The edge of the land. He is stopped about forty paces short of it, and
+       until now nothing said so - he simply stopped walking, which in the mist
+       is indistinguishable from having hit a stone he could not see. The ground
+       itself now darkens across that line, so "you cannot go that way" is
+       something you can SEE rather than something you discover. */
+    const edge = Math.max(-x, x - L.w, -y, y - L.h) + 38;
+    if (edge > -62) {
+      const t = smooth(Math.min(1, Math.max(0, (edge + 62) / 150)));
+      out.lerp(apron, t * .92);
+      out.multiplyScalar(1 - t * .32);
+    }
     return out;
   }
   const base = new THREE.Color(L.ground);
   const tint = new THREE.Color(L.ground).offsetHSL(.04, -.05, .06);
   const bank = new THREE.Color(0x6b6350);
+  const apron = new THREE.Color(L.apron);
 
   return { height, colourAt, hasWater: !!carve };
 }

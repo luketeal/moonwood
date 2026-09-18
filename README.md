@@ -91,8 +91,14 @@ safe with full health, and any damage he did to that monster stays done.
 - On a keyboard: arrow keys or WASD, space for ACTION, Q for ABILITY, and keys
   1-7 for moves in a fight
 
-If a tree gets between the camera and him the camera slips past it, so he is
-never lost behind anything. In a fight he takes a step back and the camera
+If anything tall gets between the camera and him - a tree, a standing column -
+the camera slips past it. If it is too close for that to help, the camera climbs
+and looks over the top. And if it is squarely on top of him even then, a flat
+copy of him is drawn over it, so he is never lost behind anything.
+
+The edge of each land is a raised bank. He is stopped a little short of it, and
+without something to see there, "you cannot go that way" and "you have walked
+into a stone you cannot see" feel exactly the same. In a fight he takes a step back and the camera
 swings round to the side, so you can see the two of them squaring up - and they
 turn to face each other, as do creatures when he comes near them.
 
@@ -156,8 +162,12 @@ painted three colours. It is all in one table, `MOOD`, at the top of
   shadows, a mauve sky, and much less fog, because you are meant to be able to
   see across it. The grass is tall and leans in the wind.
 - **The Ruins** - the moon is high and colourless, so there are no long shadows
-  to hide in. The fog is heavy and mist lies about his knees in five drifting
-  sheets. Nothing grows much and nothing moves.
+  to hide in. The fog is heavy and mist drifts in four sheets between knee and
+  head height. Nothing grows much and nothing moves.
+
+The mist keeps a clear bubble around him. Mist that hides the stone he is about
+to walk into is not atmosphere, it is a blindfold, so it lives in the middle
+distance where it does the work and never between him and his own feet.
 
 Changing `el` in that table moves the moon up or down over a land, which changes
 the whole feel of it more than any other single number.
