@@ -66,7 +66,12 @@ export function createRenderer(canvas, opts) {
     topCol: { value: new THREE.Color(0x060a16) },
     lowCol: { value: new THREE.Color(0x26365a) },
     fogCol: { value: new THREE.Color(0x26365a) },
-    moonDir: { value: MOON_DIR.clone() }
+    moonDir: { value: MOON_DIR.clone() },
+    // How fiercely the moon burns. Full strength in the sky you look at; turned
+    // right down for the copy that gets baked into the reflection map, because
+    // a mirror-bright moon lying on the water is blinding at the one angle where
+    // it lines up.
+    moonGain: { value: 6.0 }
   };
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(3200, 32, 20),
@@ -78,6 +83,7 @@ export function createRenderer(canvas, opts) {
         void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: `
         uniform vec3 topCol, lowCol, fogCol, moonDir;
+        uniform float moonGain;
         varying vec3 vDir;
         void main(){
           vec3 d = normalize(vDir);
@@ -85,7 +91,7 @@ export function createRenderer(canvas, opts) {
           vec3 col = mix(lowCol, topCol, pow(clamp(h, 0.0, 1.0), 0.55));
           col = mix(fogCol, col, smoothstep(-0.05, 0.14, h));
           float m = max(dot(d, normalize(moonDir)), 0.0);
-          col += vec3(0.93, 0.95, 1.0) * pow(m, 340.0) * 6.0;   // the moon
+          col += vec3(0.93, 0.95, 1.0) * pow(m, 340.0) * moonGain;   // the moon
           col += vec3(0.55, 0.62, 0.85) * pow(m, 9.0) * 0.16;   // the wash around it
           gl_FragColor = vec4(col, 1.0);
         }`
@@ -138,7 +144,9 @@ export function createRenderer(canvas, opts) {
     const envScene = new THREE.Scene();
     const ball = new THREE.Mesh(sky.geometry, sky.material);
     envScene.add(ball);
+    skyUniforms.moonGain.value = 0.9;
     envRT = pmrem.fromScene(envScene, 0, 100, 6000);
+    skyUniforms.moonGain.value = 6.0;
     scene.environment = envRT.texture;
     scene.environmentIntensity = 1.0;
   }
@@ -166,8 +174,35 @@ export function createRenderer(canvas, opts) {
   rim.position.copy(MOON_DIR).multiplyScalar(-1).setY(0.45).normalize().multiplyScalar(1000);
   scene.add(rim);
 
+  /* The soft light that travels with him. Nothing in the story is casting it,
+     so it has no business making a reflection: on water it was burning a hole
+     in the picture wherever he walked near the river. Everything except the
+     water is also on WET's layer; the water is ONLY on it, and this one light
+     is not, so it lights the world and leaves the river alone. */
+  const WET = 1;
   const heroGlow = new THREE.PointLight(0x9dbcff, 2600, 380, 2);
   scene.add(heroGlow);
+  camera.layers.enable(WET);
+  rim.layers.enable(WET);
+
+  // The sky light gets its own, quieter copy for the water. Looked at along its
+  // length a smooth surface mirrors nearly everything that lands on it, which is
+  // true and also a white screen, so the river is given rather less to mirror.
+  const hemiOnWater = new THREE.HemisphereLight(0x4878c4, 0x22422f, 0.55);
+  hemiOnWater.layers.set(WET);
+  scene.add(hemiOnWater);
+
+  /* The moon does NOT light the water directly. A directional light on a
+     surface this smooth puts a mirror of itself on it, and at the one heading
+     where that lines up with the camera it is a white hole in the screen -
+     which is exactly what it was doing on the riverbank. The water gets its own
+     moon instead, a sixth of the strength, so there is a glimmer and a moonpath
+     but nothing to look away from. The soft reflection of the whole sky still
+     comes from the reflection map, which is where it should come from. */
+  const moonOnWater = new THREE.DirectionalLight(0xbcd6ff, 0.17);
+  moonOnWater.position.copy(MOON_DIR).multiplyScalar(1000);
+  moonOnWater.layers.set(WET);
+  scene.add(moonOnWater);
 
   // Four lamps, moved about each frame to whichever fires, shards and gates are
   // nearest. Keeping the COUNT fixed matters: adding or removing a light makes
@@ -176,6 +211,7 @@ export function createRenderer(canvas, opts) {
   for (let i = 0; i < 4; i++) {
     const l = new THREE.PointLight(0xffffff, 0, 700, 2);
     l.visible = true;
+    l.layers.enable(WET);
     scene.add(l);
     lampPool.push(l);
   }
@@ -188,7 +224,12 @@ export function createRenderer(canvas, opts) {
     if (composer) composer.dispose();
     composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.44, 0.42, 0.92);
+    // The threshold sits ABOVE white on purpose. Only things that are genuinely
+    // brighter than daylight - the shards, the fires, the fireflies, the moon -
+    // are built that bright, so only they bloom. Lit surfaces never do, however
+    // brightly the moon happens to be catching them, which is what stopped the
+    // river turning into a white hole when you look along it.
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.45, 1.05);
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());
   }
@@ -346,9 +387,10 @@ export function createRenderer(canvas, opts) {
     const geo = new THREE.PlaneGeometry(L.w + apron * 2, L.h + apron * 2, 150, 110);
     geo.rotateX(-Math.PI / 2);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x1f5064, roughness: .1, metalness: .28,
+      color: 0x2a6480, roughness: .46, metalness: .08,
       transparent: true, opacity: .88
     });
+    mat.envMapIntensity = .38;
     mat.onBeforeCompile = sh => {
       sh.uniforms.uTime = { value: 0 };
       mat.userData.shader = sh;
@@ -366,6 +408,7 @@ export function createRenderer(canvas, opts) {
     };
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(L.w / 2, W.WATER_LEVEL, L.h / 2);
+    mesh.layers.set(WET);
     mesh.renderOrder = 2;
     return mesh;
   }
@@ -619,6 +662,7 @@ export function createRenderer(canvas, opts) {
       g.visible = !s.discovered.has(c.id);
       if (!g.visible) continue;
       g.position.y = gh(c.x, c.y) + Math.sin(t * 2.4 + c.x) * 2;
+      turnToward(g, c, s.p, 300, s.dt || 1);
       g.userData.spark.position.y = 52 + Math.sin(t * 3.3 + c.x) * 3;
     }
     for (const m of L.monsters) {
@@ -626,6 +670,7 @@ export function createRenderer(canvas, opts) {
       g.visible = !s.defeated.has(m.id);
       if (!g.visible) continue;
       g.position.y = gh(m.x, m.y) + Math.sin(t * 1.9 + m.x) * 2.5;
+      turnToward(g, m, s.p, (s.battle && s.battle.m === m) ? 1e9 : 340, s.dt || 1);
       const pulse = .7 + Math.sin(t * 4 + m.x) * .3;
       for (const e of g.userData.eyes) e.scale.setScalar(pulse);
     }
@@ -636,7 +681,7 @@ export function createRenderer(canvas, opts) {
       if (!A.boss) { A.boss = W.buildMonster(true); land.root.add(A.boss); }
       A.boss.visible = true;
       A.boss.position.set(m.x, gh(m.x, m.y) + Math.sin(t * 1.4) * 4, m.y);
-      A.boss.rotation.y = W.yaw(Math.atan2(s.p.y - m.y, s.p.x - m.x));
+      turnToward(A.boss, m, s.p, 1e9, s.dt || 1);
       if (A.boss.userData.ring) A.boss.userData.ring.rotation.y = t * .8;
     } else if (A.boss) A.boss.visible = false;
 
@@ -750,7 +795,9 @@ export function createRenderer(canvas, opts) {
        in, and what light is left is on the two of them. */
     const fighting = !!s.battle;
     moon.intensity += ((fighting ? 1.3 : 3.4) - moon.intensity) * .08;
+    if (!moonOnWater.userData.hold) moonOnWater.intensity = moon.intensity * .05;
     hemi.intensity += ((fighting ? .8 : 1.95) - hemi.intensity) * .08;
+    if (!hemiOnWater.userData.hold) hemiOnWater.intensity = hemi.intensity * .28;
     if (scene.fog) {
       const want = fighting ? 0.0023 : 0.00135;
       scene.fog.density += (want - scene.fog.density) * .06;
@@ -764,6 +811,19 @@ export function createRenderer(canvas, opts) {
 
   // A tiny helper so the campfire flicker is not one clean sine wave.
   function raw7(x) { return 7 + (x % 5); }
+
+  /* Everything that is built facing along its own +x turns to look at him when
+     he is within `range` - and in a fight, always. It swings round rather than
+     snapping, so a monster noticing him reads as it noticing him. */
+  function turnToward(g, from, p, range, dt) {
+    const dx = p.x - from.x, dy = p.y - from.y;
+    if (dx * dx + dy * dy > range * range) return;
+    const want = W.yaw(Math.atan2(dy, dx));
+    let d = want - g.rotation.y;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    g.rotation.y += d * (1 - Math.pow(1 - .14, dt));
+  }
 
   /* -------------------------------------------------------------------------
      SIZE, QUALITY AND THE WAY BACK OUT
@@ -822,5 +882,18 @@ export function createRenderer(canvas, opts) {
     return out;
   }
 
-  return { render, resize, setQuality, project, groundHeight, debug, get quality() { return quality; } };
+  // A way to switch one thing off at a time from the console, for when
+  // something is too bright and it is not obvious what is doing it.
+  function debugSet(what, v) {
+    if (what === 'hero') heroGlow.intensity = v;
+    else if (what === 'env') scene.environmentIntensity = v;
+    else if (what === 'bloom' && bloomPass) bloomPass.strength = v ? 0.55 : 0;
+    else if (what === 'water' && curLand && curLand.water) curLand.water.visible = !!v;
+    else if (what === 'moonlight') moon.intensity = v;
+    else if (what === 'rim') rim.intensity = v;
+    else if (what === 'moonwater') { moonOnWater.intensity = v; moonOnWater.userData.hold = true; }
+    else if (what === 'hemiwater') { hemiOnWater.intensity = v; hemiOnWater.userData.hold = true; }
+  }
+
+  return { render, resize, setQuality, project, groundHeight, debug, debugSet, get quality() { return quality; } };
 }

@@ -341,18 +341,20 @@ function curve(name){
 
 function clearOf(x,y,spot,d){return Math.hypot(x-spot.x,y-spot.y)<d}
 
-// How close a spot is to a line of points - used to keep things out of the river.
-function nearCurve(x,y,pts){
- let best=1e9;
+// How close a spot is to a line of points, and which way is the nearest bank.
+function offCurve(x,y,pts){
+ let best=1e9,bx=0,by=0;
  for(let i=0;i<pts.length-1;i++){
   const a=pts[i],b=pts[i+1],dx=b.x-a.x,dy=b.y-a.y,len=dx*dx+dy*dy;
   let t=len?((x-a.x)*dx+(y-a.y)*dy)/len:0;
   t=t<0?0:t>1?1:t;
-  const ex=a.x+dx*t-x,ey=a.y+dy*t-y,d=ex*ex+ey*ey;
-  if(d<best)best=d;
+  const ex=x-(a.x+dx*t),ey=y-(a.y+dy*t),d=ex*ex+ey*ey;
+  if(d<best){best=d;bx=ex;by=ey}
  }
- return Math.sqrt(best);
+ const d=Math.sqrt(best);
+ return d<.001?{d:0,nx:1,ny:0}:{d:d,nx:bx/d,ny:by/d};
 }
+function nearCurve(x,y,pts){return offCurve(x,y,pts).d}
 
 function buildLand(L){
  const g=L.gen;
@@ -420,6 +422,32 @@ function buildLand(L){
  L.monsters=MONSTERS.filter(m=>m.land===L.id);
  L.finds=FINDS.filter(f=>f.land===L.id);
 }
+/* Monsters, creatures, shards and campfires are all placed by hand, and were
+   placed back when the river was a stripe of blue paint you walked straight
+   over. It is a real channel now, so anything that landed in it gets walked up
+   the nearest bank first - a Bramblebear that fears water has no business
+   standing in it, and a campfire even less. */
+function outOfTheRiver(){
+ for(const L of LANDS){
+  const lanes=(L.paths||[]).filter(pa=>pa.pts==='river').map(pa=>({pts:curve(pa.pts),r:pa.w*1.5}));
+  if(!lanes.length)continue;
+  const mine=o=>o.land===L.id;
+  const placed=[L.gate,L.landmark,L.start].concat(
+    MONSTERS.filter(mine),CREATURES.filter(mine),SHARDS.filter(mine),FINDS.filter(mine));
+  for(const o of placed){
+   for(const lane of lanes){
+    for(let step=0;step<20;step++){
+     const off=offCurve(o.x,o.y,lane.pts);
+     if(off.d>=lane.r)break;
+     o.x=Math.max(70,Math.min(L.w-70,o.x+off.nx*(lane.r-off.d+16)));
+     o.y=Math.max(70,Math.min(L.h-70,o.y+off.ny*(lane.r-off.d+16)));
+    }
+   }
+  }
+ }
+}
+outOfTheRiver();
+
 LANDS.forEach(buildLand);
 const npc={land:'moonwood',x:900,y:1450,r:19};   // Luna waits on the path near where he starts
 

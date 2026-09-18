@@ -77,8 +77,14 @@ function distToLine(x, y, pts) {
    The ground never drops below FLOOR except in that channel, which is what lets
    one sheet of water lie across the whole land and only show in the river.
 --------------------------------------------------------------------------- */
-const FLOOR = -21;          // the lowest the open ground is ever allowed to sink
-export const WATER_LEVEL = -25;   // so the water sheet stays hidden outside the river
+/* One sheet of water lies across the whole land and is meant to show ONLY where
+   the river has cut the ground away. That only works while the sheet stays below
+   the open ground everywhere else - and the waves lift it by about five, so the
+   gap has to be bigger than the waves. At -25 it was breaking the surface all
+   over the flat parts of the land and flooding them. */
+const FLOOR = -21;                // the lowest the open ground is ever allowed to sink
+export const WAVE_HEIGHT = 5.1;   // how far the shader lifts the water at its peak
+export const WATER_LEVEL = -34;   // comfortably under FLOOR - WAVE_HEIGHT
 
 export function makeTerrain(L, curveOf) {
   const lanes = (L.paths || []).map(pa => ({
@@ -451,6 +457,11 @@ export function buildLandmark(type) {
 --------------------------------------------------------------------------- */
 const solid = (c, opts) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .85, flatShading: true }, opts || {}));
 
+/* Things that are meant to glow are built BRIGHTER THAN WHITE. Nothing lit by
+   the moon can ever reach these values, so the bloom pass picks out exactly the
+   things that are supposed to spill light and nothing else. */
+const glow = (hex, gain) => new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(gain) });
+
 export function buildPlayer() {
   const g = new THREE.Group();
   const legs = [], arms = [];
@@ -506,8 +517,7 @@ export function buildLuna() {
   head.position.y = 47; head.castShadow = true; g.add(head);
   const staff = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 52, 5), solid(0x8f7ac4));
   staff.position.set(0, 26, 11); g.add(staff);
-  const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(4.2, 1),
-    new THREE.MeshBasicMaterial({ color: 0xffe9a8 }));
+  const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(4.2, 1), glow(0xffe9a8, 2.6));
   orb.position.set(0, 54, 11); g.add(orb);
   const light = new THREE.PointLight(0xf5d76e, 0, 300, 2);
   light.position.set(0, 54, 11); g.add(light);
@@ -538,7 +548,7 @@ export function buildCreature(kind) {
     eye.position.set(10, 27, side * 5);
     g.add(eye);
   }
-  const spark = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  const spark = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4, 0), glow(0xffffff, 2.2));
   spark.position.y = 52;
   g.add(spark);
   g.userData = { spark };
@@ -560,11 +570,11 @@ export function buildMonster(boss) {
   }
   const eyes = [];
   if (boss) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(8, 10, 8), new THREE.MeshBasicMaterial({ color: 0xf5d76e }));
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(8, 10, 8), glow(0xf5d76e, 2.4));
     eye.position.set(15, 36, 0); g.add(eye); eyes.push(eye);
     const ring = new THREE.Group();
     for (let i = 0; i < 5; i++) {
-      const sh = new THREE.Mesh(new THREE.OctahedronGeometry(4.5), new THREE.MeshBasicMaterial({ color: 0xc8b4ff }));
+      const sh = new THREE.Mesh(new THREE.OctahedronGeometry(4.5), glow(0xc8b4ff, 2.2));
       sh.position.set(Math.cos(i * 1.256) * 34, 0, Math.sin(i * 1.256) * 34);
       ring.add(sh);
     }
@@ -572,7 +582,7 @@ export function buildMonster(boss) {
     g.userData.ring = ring;
   } else {
     for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(3.6, 8, 6), new THREE.MeshBasicMaterial({ color: 0xf1d36a }));
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(3.6, 8, 6), glow(0xf1d36a, 2.0));
       eye.position.set(16, 36, side * 6.5);
       g.add(eye); eyes.push(eye);
     }
@@ -620,7 +630,7 @@ export function buildShard() {
   const core = new THREE.Mesh(
     new THREE.OctahedronGeometry(11),
     new THREE.MeshStandardMaterial({
-      color: 0xf5d76e, emissive: 0xf7df78, emissiveIntensity: 1.15,
+      color: 0xf5d76e, emissive: 0xf7df78, emissiveIntensity: 2.1,
       roughness: .25, metalness: .3, flatShading: true
     })
   );
@@ -633,7 +643,7 @@ export function buildSeed() {
   const g = new THREE.Group();
   const core = new THREE.Mesh(
     new THREE.OctahedronGeometry(7, 0),
-    new THREE.MeshStandardMaterial({ color: 0xcdf7d6, emissive: 0x9ff5b6, emissiveIntensity: 1.1, roughness: .3 })
+    new THREE.MeshStandardMaterial({ color: 0xcdf7d6, emissive: 0x9ff5b6, emissiveIntensity: 2.0, roughness: .3 })
   );
   core.scale.set(.7, 1.5, .7);
   g.add(core);
@@ -653,13 +663,13 @@ export function buildFire() {
   }
   const flame = new THREE.Mesh(
     new THREE.ConeGeometry(9, 30, 7),
-    new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: .92 })
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffb347).multiplyScalar(2.4), transparent: true, opacity: .92 })
   );
   flame.position.y = 20;
   g.add(flame);
   const core = new THREE.Mesh(
     new THREE.ConeGeometry(4.4, 18, 6),
-    new THREE.MeshBasicMaterial({ color: 0xffe9a8 })
+    glow(0xffe9a8, 3.0)
   );
   core.position.y = 15;
   g.add(core);
@@ -714,7 +724,7 @@ export function buildBoots() {
     toe.position.set(2.5, -6, 0);
     boot.add(toe);
   }
-  const spark = new THREE.Mesh(new THREE.IcosahedronGeometry(2.6, 0), new THREE.MeshBasicMaterial({ color: 0xf5d76e }));
+  const spark = new THREE.Mesh(new THREE.IcosahedronGeometry(2.6, 0), glow(0xf5d76e, 2.2));
   spark.position.y = 34;
   g.add(spark);
   g.userData = { spark };

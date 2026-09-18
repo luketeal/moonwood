@@ -93,7 +93,8 @@ safe with full health, and any damage he did to that monster stays done.
 
 If a tree gets between the camera and him the camera slips past it, so he is
 never lost behind anything. In a fight he takes a step back and the camera
-swings round to the side, so you can see the two of them squaring up.
+swings round to the side, so you can see the two of them squaring up - and they
+turn to face each other, as do creatures when he comes near them.
 
 ## Publishing it
 
@@ -135,7 +136,9 @@ to build. What makes it look like anything is the lighting, not the models:
 - **Distance**, which eats colour, so far trees go blue and soft and the wood
   feels bigger than the screen
 - **A bloom pass**, which spills light from anything brighter than daylight -
-  shards, campfires, fireflies, the gate, the moon itself
+  shards, campfires, fireflies, the gate, the moon itself. Those things are
+  deliberately built brighter than white so that they, and only they, bloom: a
+  surface the moon happens to be catching never does, however bright it looks
 - **The sky reflected**, baked once per land, which is what puts a moon on the
   river and a little cold light on everything else
 
