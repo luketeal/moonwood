@@ -5,19 +5,27 @@
    no artwork files, nothing to download. They are all built once when a land is
    first walked into and then kept, so walking back into a land costs nothing.
 
-   The game's map is flat: everything has an x and a y, and z is height. Three.js
-   wants y to be up instead, so the one rule that matters in this file is:
+   The game's map is flat: everything has an x and a y, and z is height. On that
+   map x runs east and y runs SOUTH, which - with z up - is a left-handed set of
+   axes. Three.js is right-handed with y up. The rule that reconciles them, and
+   the only one that matters in this file, is:
 
-       game (x, y, z)  ->  three (x, z, -y)
+       game (x, y, z)  ->  three (x, z, y)
 
-   and a heading of `a` on the map is a turn of `a` about three's up axis. The
-   helper v3() below is the only place that conversion is written down.
+   and a heading of `a` on the map is a turn of MINUS `a` about three's up axis.
+
+   Both halves of that matter. Sending game y to three's -z instead looks fine
+   and is quietly a mirror image of the world: left and right swap over, so the
+   turn buttons and the compass all come out backwards.
 --------------------------------------------------------------------------- */
 import * as THREE from './vendor/three.module.min.js';
 import { mergeGeometries } from './vendor/utils/BufferGeometryUtils.js';
 
-export function v3(x, y, z) { return new THREE.Vector3(x, z || 0, -y); }
-export function setPos(obj, x, y, z) { obj.position.set(x, z || 0, -y); }
+export function v3(x, y, z) { return new THREE.Vector3(x, z || 0, y); }
+export function setPos(obj, x, y, z) { obj.position.set(x, z || 0, y); }
+
+// A heading on the map, as a turn in the scene.
+export function yaw(a) { return -a; }
 
 /* ---------------------------------------------------------------------------
    THE SAME LAND EVERY TIME
@@ -80,7 +88,7 @@ export function makeTerrain(L, curveOf) {
   let carve = null;
   for (const lane of lanes) if (lane.water && (!carve || lane.w > carve.w)) carve = lane;
 
-  function height(x, y) {
+  function slowHeight(x, y) {
     let h = (fbm(x / 620, y / 620, 3) - .5) * 34 + (fbm(x / 170 + 31, y / 170 + 17, 2) - .5) * 7;
     if (h < FLOOR) h = FLOOR;
     for (const lane of lanes) {
@@ -95,6 +103,32 @@ export function makeTerrain(L, curveOf) {
       if (d < r) { const t = smooth(1 - d / r); h -= t * t * 54; }
     }
     return h;
+  }
+
+  /* Working a height out from scratch means walking every path and the whole
+     river for that one point. Doing it for the boy, the camera, the light and
+     every creature sixty times a second is far too much, and on a phone it shows
+     up as a stutter. So it is worked out once onto a grid when the land is built,
+     and read back off the grid with a little smoothing after that - about twenty
+     times cheaper, and close enough that he never floats or sinks. */
+  const STEP = 32, PAD = 700;
+  const gx0 = -PAD, gy0 = -PAD;
+  const gnx = Math.ceil((L.w + PAD * 2) / STEP) + 1;
+  const gny = Math.ceil((L.h + PAD * 2) / STEP) + 1;
+  const grid = new Float32Array(gnx * gny);
+  for (let j = 0; j < gny; j++) {
+    for (let i = 0; i < gnx; i++) grid[j * gnx + i] = slowHeight(gx0 + i * STEP, gy0 + j * STEP);
+  }
+
+  function height(x, y) {
+    const fx = (x - gx0) / STEP, fy = (y - gy0) / STEP;
+    const i = Math.floor(fx), j = Math.floor(fy);
+    if (i < 0 || j < 0 || i >= gnx - 1 || j >= gny - 1) return slowHeight(x, y);
+    const tx = fx - i, ty = fy - j, n = gnx;
+    const a = grid[j * n + i], b = grid[j * n + i + 1];
+    const c = grid[(j + 1) * n + i], d = grid[(j + 1) * n + i + 1];
+    const top = a + (b - a) * tx, bot = c + (d - c) * tx;
+    return top + (bot - top) * ty;
   }
 
   function colourAt(x, y, h, out) {
@@ -133,7 +167,7 @@ export function groundMesh(L, terrain, quality) {
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     // Plane sits around the origin; shift it so it covers the land.
-    const gx = pos.getX(i) + L.w / 2, gy = -pos.getZ(i) + L.h / 2;
+    const gx = pos.getX(i) + L.w / 2, gy = pos.getZ(i) + L.h / 2;
     const y = terrain.height(gx, gy);
     pos.setY(i, y);
     terrain.colourAt(gx, gy, y, c);
@@ -145,7 +179,7 @@ export function groundMesh(L, terrain, quality) {
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 1, metalness: 0
   }));
-  mesh.position.set(L.w / 2, 0, -L.h / 2);
+  mesh.position.set(L.w / 2, 0, L.h / 2);
   mesh.receiveShadow = true;
   return mesh;
 }

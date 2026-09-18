@@ -30,11 +30,11 @@ const MOON_AZ = 2.3, MOON_EL = 0.62;
 const MOON_DIR = new THREE.Vector3(
   Math.cos(MOON_EL) * Math.cos(MOON_AZ),
   Math.sin(MOON_EL),
-  -Math.cos(MOON_EL) * Math.sin(MOON_AZ)
+  Math.cos(MOON_EL) * Math.sin(MOON_AZ)
 ).normalize();
 
 const QUALITY = {
-  high: { shadow: 2048, bloom: true, dpr: 2, undergrowth: 4200, shadowDist: 660 },
+  high: { shadow: 1536, bloom: true, dpr: 2, undergrowth: 4200, shadowDist: 660 },
   med: { shadow: 1024, bloom: true, dpr: 1.75, undergrowth: 1800, shadowDist: 520 },
   low: { shadow: 0, bloom: false, dpr: 1.3, undergrowth: 900, shadowDist: 0 }
 };
@@ -104,7 +104,7 @@ export function createRenderer(canvas, opts) {
       const ce = Math.cos(el);
       pos[i * 3] = Math.cos(az) * ce * 3000;
       pos[i * 3 + 1] = Math.sin(el) * 3000;
-      pos[i * 3 + 2] = -Math.sin(az) * ce * 3000;
+      pos[i * 3 + 2] = Math.sin(az) * ce * 3000;
       bright[i] = .25 + ((i * 17) % 70) / 100;
     }
     starGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -220,7 +220,7 @@ export function createRenderer(canvas, opts) {
     const cols = new Float32Array(list.length * 3);
     list.forEach((t, i) => {
       const s = t.s * heightOf / W.TREE_H;
-      dummy.position.set(t.x, terrain.height(t.x, t.y) - 2, -t.y);
+      dummy.position.set(t.x, terrain.height(t.x, t.y) - 2, t.y);
       dummy.rotation.set(0, (t.x * 0.7 + t.y * 1.3) % 6.283, 0);
       dummy.scale.set(s, s * (0.9 + ((t.x * 7 + t.y) % 40) / 160), s);
       dummy.updateMatrix();
@@ -259,7 +259,7 @@ export function createRenderer(canvas, opts) {
     if (L.rocks.length) {
       const rocks = instanced(W.rockGeometry(), stoneMat, L.rocks.length, true);
       L.rocks.forEach((r, i) => {
-        dummy.position.set(r.x, terrain.height(r.x, r.y) - r.s * .07, -r.y);
+        dummy.position.set(r.x, terrain.height(r.x, r.y) - r.s * .07, r.y);
         dummy.rotation.set(((r.x % 17) / 17 - .5) * .4, (r.x * 1.7 + r.y) % 6.283, ((r.y % 13) / 13 - .5) * .4);
         dummy.scale.setScalar(r.s * .55);
         dummy.updateMatrix();
@@ -275,7 +275,7 @@ export function createRenderer(canvas, opts) {
       const list = byType[type];
       const mesh = instanced(W.propGeometry(type), leafMat, list.length, type !== 'grass' && type !== 'flower');
       list.forEach((o, i) => {
-        dummy.position.set(o.x, terrain.height(o.x, o.y) - 1, -o.y);
+        dummy.position.set(o.x, terrain.height(o.x, o.y) - 1, o.y);
         dummy.rotation.set(0, o.r, 0);
         dummy.scale.setScalar(o.s);
         dummy.updateMatrix();
@@ -302,7 +302,7 @@ export function createRenderer(canvas, opts) {
         color: grassCol.multiplyScalar(1.75), vertexColors: true, roughness: 1, flatShading: true
       }), tufts.length, false);
       tufts.forEach((t, i) => {
-        dummy.position.set(t.x, terrain.height(t.x, t.y) - 1, -t.y);
+        dummy.position.set(t.x, terrain.height(t.x, t.y) - 1, t.y);
         dummy.rotation.set(0, (t.x + t.y) % 6.283, 0);
         dummy.scale.set(t.s, t.s * (.8 + ((t.x % 30) / 50)), t.s);
         dummy.updateMatrix();
@@ -365,7 +365,7 @@ export function createRenderer(canvas, opts) {
                          + sin((position.x+position.z)*0.013 + uTime*0.7)*2.2;`);
     };
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(L.w / 2, W.WATER_LEVEL, -L.h / 2);
+    mesh.position.set(L.w / 2, W.WATER_LEVEL, L.h / 2);
     mesh.renderOrder = 2;
     return mesh;
   }
@@ -481,41 +481,64 @@ export function createRenderer(canvas, opts) {
      that it is pointed the right way and pulled in if a tree gets between it and
      him, which is the one thing that would otherwise leave him hidden.
   ------------------------------------------------------------------------- */
+  let camPull = 1e4;          // how far back the trees are letting the camera sit
+
   function placeCamera(s) {
-    const cam = s.cam, p = s.p;
-    let cx = cam.x, cy = cam.y;
+    const cam = s.cam, p = s.p, dt = s.dt || 1;
 
-    // Walking about, anything standing between the camera and him gets the
-    // camera pulled in past it. In a fight the game frames the two of them
-    // deliberately, from the side, so leave that framing alone.
-    if (!s.battle) {
-      const dx = p.x - cx, dy = p.y - cy, dist = Math.hypot(dx, dy) || 1;
-      const bx = dx / dist, by = dy / dist;
-      let allow = dist;
-      const trees = s.L.trees;
-      for (let i = 0; i < trees.length; i++) {
-        const t = trees[i];
-        const rx = t.x - cx, ry = t.y - cy;
-        const along = rx * bx + ry * by;
-        if (along < 12 || along > dist - 30) continue;
-        if (Math.abs(rx * by - ry * bx) < t.s * .9 + 22) allow = Math.min(allow, along - 26);
-      }
-      allow = Math.max(70, allow);
-      if (allow < dist) { cx = p.x - bx * allow; cy = p.y - by * allow; }
+    // The camera is always looking at something: him, or - in a fight - the
+    // point between him and the monster. Anything standing between the camera
+    // and THAT is what has to be got out of the way.
+    let tx = p.x, ty = p.y;
+    if (s.battle) { tx = (p.x + s.battle.m.x) / 2; ty = (p.y + s.battle.m.y) / 2; }
+
+    const dx = tx - cam.x, dy = ty - cam.y, dist = Math.hypot(dx, dy) || 1;
+    const bx = dx / dist, by = dy / dist;
+    const gnd = curLand ? curLand.terrain : null;
+    const eyeZ = cam.z;
+    const lookZ = (gnd ? gnd.height(tx, ty) : 0) + (s.battle ? 32 : cam.aim);
+
+    let allow = dist;
+    const trees = s.L.trees;
+    for (let i = 0; i < trees.length; i++) {
+      const t = trees[i];
+      const rx = t.x - cam.x, ry = t.y - cam.y;
+      const along = rx * bx + ry * by;
+      if (along < 40 || along > dist - 30) continue;
+      // A tree beside the camera covers far more of the screen than one the
+      // same width standing next to him, so what counts as "in the way" widens
+      // the closer to the camera it is.
+      const near = 1 - along / dist;
+      if (Math.abs(rx * by - ry * bx) > t.s * .7 + 18 + 40 * near) continue;
+      // The camera looks DOWN from well above his head, so most trees pass
+      // harmlessly underneath the line of sight. Only one tall enough to break
+      // that line is actually in the way.
+      const sight = eyeZ + (lookZ - eyeZ) * (along / dist);
+      const top = (gnd ? gnd.height(t.x, t.y) : 0) + t.s * (t.pine ? 4.6 : 3.6);
+      if (top > sight) allow = Math.min(allow, along - 26);
     }
+    // Never closer than a bit over half way in. Past that the cure is worse than
+    // the tree: a camera in his pocket is more disorienting than a branch.
+    allow = Math.max(dist * .55, allow);
 
-    const ground = curLand ? curLand.terrain.height(cx, cy) : 0;
-    const cz = Math.max(cam.z, ground + 46);
-    camera.position.set(cx, cz, -cy);
+    // Moving the camera straight to wherever the trees allow makes it jump every
+    // time one passes the test - and in a wood, one always is. So it ducks in
+    // quickly when something is in the way and drifts back out slowly after.
+    const rate = camPull > allow ? .4 : .05;
+    camPull += (allow - camPull) * (1 - Math.pow(1 - rate, dt));
+    const use = Math.min(dist, camPull);
+    const cx = tx - bx * use, cy = ty - by * use;
 
-    // Aimed along the camera's own heading and tilt, exactly as the flat game
-    // aimed it - that is what keeps every shot framed the way it used to be.
-    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-    camera.lookAt(
-      cx + Math.cos(cam.yaw) * cp * 100,
-      cz - sp * 100,
-      -(cy + Math.sin(cam.yaw) * cp * 100)
-    );
+    const under = curLand ? curLand.terrain.height(cx, cy) : 0;
+    const cz = Math.max(cam.z, under + 46);
+    camera.position.set(cx, cz, cy);
+
+    // Pointed AT what it is framing, rather than along a fixed heading. The flat
+    // game could use a fixed heading because the camera never moved off its
+    // circle; this one ducks in past trees, and from closer in the same heading
+    // would look straight over the top of him.
+    const aim = (curLand ? curLand.terrain.height(tx, ty) : 0) + (s.battle ? 32 : cam.aim);
+    camera.lookAt(tx, aim, ty);
   }
 
   /* -------------------------------------------------------------------------
@@ -555,7 +578,7 @@ export function createRenderer(canvas, opts) {
 
     // The moon follows him about so its shadows are always crisp where he is.
     if (Q.shadow) {
-      moon.target.position.set(s.p.x, gh(s.p.x, s.p.y), -s.p.y);
+      moon.target.position.set(s.p.x, gh(s.p.x, s.p.y), s.p.y);
       moon.position.copy(moon.target.position).addScaledVector(MOON_DIR, 1400);
       const d = Q.shadowDist;
       const c = moon.shadow.camera;
@@ -565,9 +588,9 @@ export function createRenderer(canvas, opts) {
 
     // Him.
     const pz = gh(s.p.x, s.p.y);
-    A.player.position.set(s.p.x, pz, -s.p.y);
-    heroGlow.position.set(s.p.x, pz + 150, -s.p.y);
-    A.player.rotation.y = s.p.a;
+    A.player.position.set(s.p.x, pz, s.p.y);
+    heroGlow.position.set(s.p.x, pz + 150, s.p.y);
+    A.player.rotation.y = W.yaw(s.p.a);
     {
       const step = Math.sin(s.p.bob), u = A.player.userData;
       u.legs[0].rotation.z = step * .55;
@@ -585,7 +608,7 @@ export function createRenderer(canvas, opts) {
         W.setPos(A.luna, s.npc.x, s.npc.y, gh(s.npc.x, s.npc.y));
         land.root.add(A.luna);
       }
-      A.luna.rotation.y = Math.atan2(s.p.y - s.npc.y, s.p.x - s.npc.x) + Math.PI;
+      A.luna.rotation.y = W.yaw(Math.atan2(s.p.y - s.npc.y, s.p.x - s.npc.x));
       A.luna.userData.orb.position.y = 54 + Math.sin(t * 2.6) * 2;
       A.luna.userData.orb.scale.setScalar(1 + Math.sin(t * 2.6) * .12);
     }
@@ -612,16 +635,16 @@ export function createRenderer(canvas, opts) {
       const m = s.battle.m;
       if (!A.boss) { A.boss = W.buildMonster(true); land.root.add(A.boss); }
       A.boss.visible = true;
-      A.boss.position.set(m.x, gh(m.x, m.y) + Math.sin(t * 1.4) * 4, -m.y);
-      A.boss.rotation.y = Math.atan2(s.p.y - m.y, s.p.x - m.x) + Math.PI;
+      A.boss.position.set(m.x, gh(m.x, m.y) + Math.sin(t * 1.4) * 4, m.y);
+      A.boss.rotation.y = W.yaw(Math.atan2(s.p.y - m.y, s.p.x - m.x));
       if (A.boss.userData.ring) A.boss.userData.ring.rotation.y = t * .8;
     } else if (A.boss) A.boss.visible = false;
 
     // Frogs, rabbits and bats.
     for (const { g, c } of A.critters) {
       const ph = t * 3.8 + c.ph;
-      g.position.set(c.x, gh(c.x, c.y) + Math.abs(Math.sin(ph)) * (3 + c.hop * 7), -c.y);
-      g.rotation.y = c.dir || 0;
+      g.position.set(c.x, gh(c.x, c.y) + Math.abs(Math.sin(ph)) * (3 + c.hop * 7), c.y);
+      g.rotation.y = W.yaw(c.dir || 0);
       if (g.userData.wings) {
         const w = Math.sin(ph * 3) * .8;
         g.userData.wings[0].rotation.x = w;
@@ -710,13 +733,13 @@ export function createRenderer(canvas, opts) {
       lampWants.push({ x: m.x, y: m.y, z: gh(m.x, m.y) + 90, c: 0xc0a6ff, i: 9000, d: 900 });
     }
     const cx = camera.position.x, cz = camera.position.z;
-    for (const l of lampWants) l._d = (l.x - cx) * (l.x - cx) + (-l.y - cz) * (-l.y - cz);
+    for (const l of lampWants) l._d = (l.x - cx) * (l.x - cx) + (l.y - cz) * (l.y - cz);
     lampWants.sort((a, b) => a._d - b._d);
     for (let i = 0; i < lampPool.length; i++) {
       const want = lampWants[i];
       const lamp = lampPool[i];
       if (want && want._d < 1500 * 1500) {
-        lamp.position.set(want.x, want.z, -want.y);
+        lamp.position.set(want.x, want.z, want.y);
         lamp.color.setHex(want.c);
         lamp.intensity = want.i;
         lamp.distance = want.d;
@@ -772,7 +795,7 @@ export function createRenderer(canvas, opts) {
   // Where a spot in the world lands on the screen, for the name plates.
   const projV = new THREE.Vector3();
   function project(x, y, z) {
-    projV.set(x, z || 0, -y).project(camera);
+    projV.set(x, z || 0, y).project(camera);
     if (projV.z > 1) return null;
     return {
       x: (projV.x * .5 + .5) * canvas.clientWidth,
