@@ -24,14 +24,44 @@ import { UnrealBloomPass } from './vendor/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from './vendor/postprocessing/OutputPass.js';
 import * as W from './world3d.js';
 
-// Where the moon sits. The 2-D game had it at this bearing too, so the light
-// falls the way the old painted moon said it should.
-const MOON_AZ = 2.3, MOON_EL = 0.62;
-const MOON_DIR = new THREE.Vector3(
-  Math.cos(MOON_EL) * Math.cos(MOON_AZ),
-  Math.sin(MOON_EL),
-  Math.cos(MOON_EL) * Math.sin(MOON_AZ)
-).normalize();
+/* ---------------------------------------------------------------------------
+   THE THREE MOODS
+
+   The same moon hangs over all three lands - it is one night - but it sits at a
+   different height and a different colour over each, and that, with the fog and
+   the exposure, is what makes them feel like different places rather than the
+   same wood painted three colours.
+
+     el     how high the moon sits. Low means long raking shadows and a lot of
+            sky; high means short shadows and nowhere to hide
+     fog    how fast distance eats the picture. Moonwood is close and enclosed,
+            Sunfield is open and you can see across it, the Ruins are smothered
+     wind   how hard the grass leans
+     mist   whether the ground holds mist that drifts about his knees
+--------------------------------------------------------------------------- */
+const MOOD = {
+  moonwood: {          // a cold clear night under pines
+    az: 2.30, el: 0.62, key: 0xbcd6ff, keyI: 3.4, moonCol: [0.93, 0.95, 1.00], moonGain: 6.0,
+    hemiSky: 0x4878c4, hemiGnd: 0x22422f, hemiI: 1.95, rim: 0x6f86c8, rimI: 0.85,
+    fog: 0.00135, exposure: 1.30, wind: 0.3, undergrowth: 1.0, mist: 0
+  },
+  sunfield: {          // a big warm low moon over open country, almost dusk
+    az: 2.55, el: 0.30, key: 0xffcf9a, keyI: 3.2, moonCol: [1.00, 0.88, 0.70], moonGain: 7.0,
+    hemiSky: 0x8f6fa8, hemiGnd: 0x5c5a2e, hemiI: 2.00, rim: 0xd6a173, rimI: 0.70,
+    fog: 0.00075, exposure: 1.36, wind: 0.75, undergrowth: 1.7, grass: 1.35, mist: 0
+  },
+  ruins: {             // high, colourless and smothered
+    az: 2.10, el: 0.75, key: 0x9db4d8, keyI: 2.1, moonCol: [0.86, 0.90, 0.98], moonGain: 4.0,
+    hemiSky: 0x3d4c68, hemiGnd: 0x2c2b2f, hemiI: 1.55, rim: 0x55647e, rimI: 0.55,
+    fog: 0.00175, exposure: 1.27, wind: 0.1, undergrowth: 0.55, mist: 1
+  }
+};
+const KEY = new THREE.Vector3();          // which way the moonlight comes from, now
+let mood = MOOD.moonwood;
+function aimKey(m) {
+  KEY.set(Math.cos(m.el) * Math.cos(m.az), Math.sin(m.el), Math.cos(m.el) * Math.sin(m.az)).normalize();
+}
+aimKey(mood);
 
 const QUALITY = {
   high: { shadow: 1536, bloom: true, dpr: 2, undergrowth: 4200, shadowDist: 660 },
@@ -66,7 +96,8 @@ export function createRenderer(canvas, opts) {
     topCol: { value: new THREE.Color(0x060a16) },
     lowCol: { value: new THREE.Color(0x26365a) },
     fogCol: { value: new THREE.Color(0x26365a) },
-    moonDir: { value: MOON_DIR.clone() },
+    moonDir: { value: KEY.clone() },
+    moonCol: { value: new THREE.Color(0.93, 0.95, 1.0) },
     // How fiercely the moon burns. Full strength in the sky you look at; turned
     // right down for the copy that gets baked into the reflection map, because
     // a mirror-bright moon lying on the water is blinding at the one angle where
@@ -82,7 +113,7 @@ export function createRenderer(canvas, opts) {
         varying vec3 vDir;
         void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: `
-        uniform vec3 topCol, lowCol, fogCol, moonDir;
+        uniform vec3 topCol, lowCol, fogCol, moonDir, moonCol;
         uniform float moonGain;
         varying vec3 vDir;
         void main(){
@@ -91,8 +122,8 @@ export function createRenderer(canvas, opts) {
           vec3 col = mix(lowCol, topCol, pow(clamp(h, 0.0, 1.0), 0.55));
           col = mix(fogCol, col, smoothstep(-0.05, 0.14, h));
           float m = max(dot(d, normalize(moonDir)), 0.0);
-          col += vec3(0.93, 0.95, 1.0) * pow(m, 340.0) * moonGain;   // the moon
-          col += vec3(0.55, 0.62, 0.85) * pow(m, 9.0) * 0.16;   // the wash around it
+          col += moonCol * pow(m, 340.0) * moonGain;                 // the moon
+          col += moonCol * 0.6 * pow(m, 9.0) * 0.16;                 // the wash around it
           gl_FragColor = vec4(col, 1.0);
         }`
     })
@@ -144,9 +175,9 @@ export function createRenderer(canvas, opts) {
     const envScene = new THREE.Scene();
     const ball = new THREE.Mesh(sky.geometry, sky.material);
     envScene.add(ball);
-    skyUniforms.moonGain.value = 0.9;
+    skyUniforms.moonGain.value = mood.moonGain * 0.15;
     envRT = pmrem.fromScene(envScene, 0, 100, 6000);
-    skyUniforms.moonGain.value = 6.0;
+    skyUniforms.moonGain.value = mood.moonGain;
     scene.environment = envRT.texture;
     scene.environmentIntensity = 1.0;
   }
@@ -171,7 +202,7 @@ export function createRenderer(canvas, opts) {
   // lit from there - it is here so that trees keep an edge against the trees
   // behind them instead of merging into one dark mass.
   const rim = new THREE.DirectionalLight(0x6f86c8, 0.85);
-  rim.position.copy(MOON_DIR).multiplyScalar(-1).setY(0.45).normalize().multiplyScalar(1000);
+  rim.position.copy(KEY).multiplyScalar(-1).setY(0.45).normalize().multiplyScalar(1000);
   scene.add(rim);
 
   /* The soft light that travels with him. Nothing in the story is casting it,
@@ -200,7 +231,7 @@ export function createRenderer(canvas, opts) {
      but nothing to look away from. The soft reflection of the whole sky still
      comes from the reflection map, which is where it should come from. */
   const moonOnWater = new THREE.DirectionalLight(0xbcd6ff, 0.17);
-  moonOnWater.position.copy(MOON_DIR).multiplyScalar(1000);
+  moonOnWater.position.copy(KEY).multiplyScalar(1000);
   moonOnWater.layers.set(WET);
   scene.add(moonOnWater);
 
@@ -215,6 +246,57 @@ export function createRenderer(canvas, opts) {
     scene.add(l);
     lampPool.push(l);
   }
+
+  /* -------------------------------------------------------------------------
+     MIST
+
+     Five big sheets of cloud lying flat at about knee and waist height, drifting
+     at different speeds and turning against each other. They travel with the
+     camera, so he is always walking through them rather than up to them. It is
+     the cheapest thing in this whole file and it does more for the Ruins than
+     anything else in it.
+  ------------------------------------------------------------------------- */
+  let mistTex = null;
+  function mistTexture() {
+    if (mistTex) return mistTex;
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const x = c.getContext('2d');
+    for (let i = 0; i < 90; i++) {
+      const px = (i * 97.3) % 256, py = (i * 151.7) % 256, r = 16 + (i * 37) % 44;
+      const g = x.createRadialGradient(px, py, 0, px, py, r);
+      g.addColorStop(0, 'rgba(255,255,255,0.22)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = g;
+      x.beginPath(); x.arc(px, py, r, 0, 6.3); x.fill();
+    }
+    // Fade the sheet away at its own edges, so you never see where it stops.
+    x.globalCompositeOperation = 'destination-in';
+    const e = x.createRadialGradient(128, 128, 26, 128, 128, 126);
+    e.addColorStop(0, 'rgba(255,255,255,1)');
+    e.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = e; x.fillRect(0, 0, 256, 256);
+    mistTex = new THREE.CanvasTexture(c);
+    return mistTex;
+  }
+
+  const mist = { group: new THREE.Group(), sheets: [] };
+  for (let i = 0; i < 5; i++) {
+    const sheet = new THREE.Mesh(
+      new THREE.PlaneGeometry(1900, 1900),
+      new THREE.MeshBasicMaterial({
+        map: mistTexture(), color: 0xc3cede, transparent: true, opacity: .06,
+        depthWrite: false, side: THREE.DoubleSide
+      })
+    );
+    sheet.rotation.x = -Math.PI / 2;
+    sheet.position.y = 26 + i * 24;
+    sheet.renderOrder = 3;
+    mist.group.add(sheet);
+    mist.sheets.push({ m: sheet, spin: (i % 2 ? 1 : -1) * (.006 + i * .004), drift: 26 + i * 15 });
+  }
+  mist.group.visible = false;
+  scene.add(mist.group);
 
   /* -------------------------------------------------------------------------
      THE PICTURE PASSES
@@ -242,6 +324,35 @@ export function createRenderer(canvas, opts) {
      material, hundreds of copies, one draw call. That is what lets a Moonwood
      with six hundred pines in it run on a phone.
   ------------------------------------------------------------------------- */
+  /* Grass leans. The lean is worked out in the shader from where each blade
+     stands, so a whole field of it costs nothing extra to move - and it is
+     turned back into a world direction first, otherwise every clump leans
+     whichever way it happens to be facing and the field shimmers instead of
+     bending one way together. */
+  const windMats = [];
+  function windify(mat) {
+    mat.onBeforeCompile = sh => {
+      sh.uniforms.uTime = { value: 0 };
+      sh.uniforms.uWind = { value: 0 };
+      mat.userData.sh = sh;
+      sh.vertexShader = 'uniform float uTime;\nuniform float uWind;\n' + sh.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+         #ifdef USE_INSTANCING
+           float _ph = instanceMatrix[3].x * .011 + instanceMatrix[3].z * .008;
+           float _h  = clamp(transformed.y / 17.0, 0.0, 2.0);
+           float _s  = (sin(uTime * 1.9 + _ph) + .4 * sin(uTime * 3.6 + _ph * 1.7)) * uWind * _h * 2.6;
+           vec2 _w   = vec2(_s, _s * .45);
+           transformed.x += dot(normalize(instanceMatrix[0].xyz).xz, _w);
+           transformed.z += dot(normalize(instanceMatrix[2].xyz).xz, _w);
+         #endif`
+      );
+    };
+    mat.customProgramCacheKey = () => 'wind';
+    windMats.push(mat);
+    return mat;
+  }
+
   const builtLands = {};
   const dummy = new THREE.Object3D();
   const tmpCol = new THREE.Color();
@@ -287,6 +398,7 @@ export function createRenderer(canvas, opts) {
     if (water) root.add(water);
 
     const leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, flatShading: true });
+    const windMat = windify(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, flatShading: true }));
     const stoneMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .88, flatShading: true });
 
     // Trees. Moonwood mixes pines with round ones; the Ruins only has dead ones.
@@ -314,11 +426,17 @@ export function createRenderer(canvas, opts) {
     for (const o of L.props) (byType[o.type] = byType[o.type] || []).push(o);
     for (const type in byType) {
       const list = byType[type];
-      const mesh = instanced(W.propGeometry(type), leafMat, list.length, type !== 'grass' && type !== 'flower');
+      const soft = type === 'grass' || type === 'flower';
+      const mesh = instanced(W.propGeometry(type), soft ? windMat : leafMat, list.length, !soft);
+      // Standing stones all exactly the same height, all exactly upright, read as
+      // a fence. Broken ones lean, and they broke at different heights.
+      const lean = type === 'column' ? .1 : type === 'arch' ? .05 : 0;
+      const tall = type === 'column' ? .8 : 0;
       list.forEach((o, i) => {
+        const n = ((o.x * 7 + o.y * 13) % 100) / 100;
         dummy.position.set(o.x, terrain.height(o.x, o.y) - 1, o.y);
-        dummy.rotation.set(0, o.r, 0);
-        dummy.scale.setScalar(o.s);
+        dummy.rotation.set((n - .5) * lean, o.r, (((o.y * 5) % 100) / 100 - .5) * lean);
+        dummy.scale.set(o.s, o.s * (tall ? .55 + n * tall : 1), o.s);
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
       });
@@ -332,16 +450,17 @@ export function createRenderer(canvas, opts) {
     const gm = L.grass.match(/[\d.]+/g) || [120, 140, 100];
     const grassCol = new THREE.Color().setRGB(gm[0] / 255, gm[1] / 255, gm[2] / 255, THREE.SRGBColorSpace);
     for (const t of L.tufts) tufts.push({ x: t.x, y: t.y, s: t.s / 9 });
-    for (let i = 0; i < Q.undergrowth; i++) {
+    const sow = Math.round(Q.undergrowth * (MOOD[L.id] ? MOOD[L.id].undergrowth : 1));
+    for (let i = 0; i < sow; i++) {
       const x = (i * 733.7) % L.w, y = (i * 419.3) % L.h;
       if (W.fbm(x / 340 + 5, y / 340 + 9, 2) < .46) continue;   // they grow in patches, not evenly
       if (terrain.height(x, y) < -12) continue;                 // and not in the river
-      tufts.push({ x, y, s: .95 + ((i * 11) % 70) / 100 });
+      tufts.push({ x, y, s: (.95 + ((i * 11) % 70) / 100) * (MOOD[L.id] ? (MOOD[L.id].grass || 1) : 1) });
     }
     if (tufts.length) {
-      const mesh = instanced(W.tuftGeometry(0xffffff), new THREE.MeshStandardMaterial({
+      const mesh = instanced(W.tuftGeometry(0xffffff), windify(new THREE.MeshStandardMaterial({
         color: grassCol.multiplyScalar(1.75), vertexColors: true, roughness: 1, flatShading: true
-      }), tufts.length, false);
+      })), tufts.length, false);
       tufts.forEach((t, i) => {
         dummy.position.set(t.x, terrain.height(t.x, t.y) - 1, t.y);
         dummy.rotation.set(0, (t.x + t.y) % 6.283, 0);
@@ -606,7 +725,22 @@ export function createRenderer(canvas, opts) {
       const fog = L.fog.split(',').map(Number);
       const fogCol = new THREE.Color().setRGB(fog[0] / 255, fog[1] / 255, fog[2] / 255, THREE.SRGBColorSpace);
       skyUniforms.fogCol.value.copy(fogCol);
-      scene.fog = new THREE.FogExp2(0x000000, 0.00135);
+
+      mood = MOOD[L.id] || MOOD.moonwood;
+      aimKey(mood);
+      skyUniforms.moonDir.value.copy(KEY);
+      skyUniforms.moonCol.value.setRGB(mood.moonCol[0], mood.moonCol[1], mood.moonCol[2]);
+      skyUniforms.moonGain.value = mood.moonGain;
+      moon.color.setHex(mood.key);
+      hemi.color.setHex(mood.hemiSky); hemi.groundColor.setHex(mood.hemiGnd);
+      hemiOnWater.color.setHex(mood.hemiSky); hemiOnWater.groundColor.setHex(mood.hemiGnd);
+      rim.color.setHex(mood.rim); rim.intensity = mood.rimI;
+      rim.position.copy(KEY).multiplyScalar(-1).setY(0.45).normalize().multiplyScalar(1000);
+      moonOnWater.position.copy(KEY).multiplyScalar(1000);
+      renderer.toneMappingExposure = mood.exposure;
+      mist.group.visible = mood.mist > 0;
+
+      scene.fog = new THREE.FogExp2(0x000000, mood.fog);
       scene.fog.color.copy(fogCol);
       renderer.setClearColor(fogCol, 1);
       bakeSky();
@@ -614,15 +748,27 @@ export function createRenderer(canvas, opts) {
 
     const land = curLand, A = land.actors, terrain = land.terrain;
     const gh = (x, y) => terrain.height(x, y);
+    const gh0 = (x, z) => terrain.height(x, z);   // scene x/z map straight onto map x/y
 
     placeCamera(s);
     sky.position.copy(camera.position);
     stars.position.copy(camera.position);
 
+    if (mood.mist > 0) {
+      const mx = camera.position.x, mz = camera.position.z;
+      mist.group.position.set(mx, gh0(mx, mz), mz);
+      for (const sh of mist.sheets) {
+        sh.m.rotation.z = t * sh.spin;
+        sh.m.position.x = Math.sin(t * .07) * sh.drift;
+        sh.m.position.z = Math.cos(t * .05) * sh.drift;
+        sh.m.material.opacity = mood.mist * (.052 + Math.sin(t * .23 + sh.drift) * .014);
+      }
+    }
+
     // The moon follows him about so its shadows are always crisp where he is.
     if (Q.shadow) {
       moon.target.position.set(s.p.x, gh(s.p.x, s.p.y), s.p.y);
-      moon.position.copy(moon.target.position).addScaledVector(MOON_DIR, 1400);
+      moon.position.copy(moon.target.position).addScaledVector(KEY, 1400);
       const d = Q.shadowDist;
       const c = moon.shadow.camera;
       c.left = -d; c.right = d; c.top = d; c.bottom = -d;
@@ -757,6 +903,12 @@ export function createRenderer(canvas, opts) {
     }
 
     // Water.
+    for (const m of windMats) {
+      if (!m.userData.sh) continue;
+      m.userData.sh.uniforms.uTime.value = t;
+      m.userData.sh.uniforms.uWind.value = mood.wind;
+    }
+
     if (land.water && land.water.material.userData.shader) {
       land.water.material.userData.shader.uniforms.uTime.value = t;
     }
@@ -794,12 +946,12 @@ export function createRenderer(canvas, opts) {
     /* A fight darkens the land around him: the moon drops back, the fog closes
        in, and what light is left is on the two of them. */
     const fighting = !!s.battle;
-    moon.intensity += ((fighting ? 1.3 : 3.4) - moon.intensity) * .08;
+    moon.intensity += ((fighting ? mood.keyI * .38 : mood.keyI) - moon.intensity) * .08;
     if (!moonOnWater.userData.hold) moonOnWater.intensity = moon.intensity * .05;
-    hemi.intensity += ((fighting ? .8 : 1.95) - hemi.intensity) * .08;
+    hemi.intensity += ((fighting ? mood.hemiI * .41 : mood.hemiI) - hemi.intensity) * .08;
     if (!hemiOnWater.userData.hold) hemiOnWater.intensity = hemi.intensity * .28;
     if (scene.fog) {
-      const want = fighting ? 0.0023 : 0.00135;
+      const want = fighting ? mood.fog * 1.7 : mood.fog;
       scene.fog.density += (want - scene.fog.density) * .06;
     }
 

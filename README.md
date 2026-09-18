@@ -142,6 +142,26 @@ to build. What makes it look like anything is the lighting, not the models:
 - **The sky reflected**, baked once per land, which is what puts a moon on the
   river and a little cold light on everything else
 
+### The three lands look different on purpose
+
+The same moon hangs over all three - it is one night - but it sits at a
+different height and a different colour over each, and that, with the fog and
+the exposure, is what makes them feel like different places rather than one wood
+painted three colours. It is all in one table, `MOOD`, at the top of
+`render3d.js`:
+
+- **Moonwood** - a cold clear night. The moon is low and blue-white, the fog is
+  close, and the wood is enclosed. The river runs through it.
+- **Sunfield** - a big warm low moon over open country, almost dusk. Long raking
+  shadows, a mauve sky, and much less fog, because you are meant to be able to
+  see across it. The grass is tall and leans in the wind.
+- **The Ruins** - the moon is high and colourless, so there are no long shadows
+  to hide in. The fog is heavy and mist lies about his knees in five drifting
+  sheets. Nothing grows much and nothing moves.
+
+Changing `el` in that table moves the moon up or down over a land, which changes
+the whole feel of it more than any other single number.
+
 ### If it runs slowly
 
 The game watches its own frame rate and quietly steps down if it cannot keep
@@ -212,6 +232,8 @@ How it all looks is in the other two files:
   make it five cones and it is a different wood
 - **The lie of the land** — `makeTerrain` in `world3d.js`: how much the ground
   rolls, how deep the river cuts, and how worn the paths are
+- **How a land feels** — the `MOOD` table at the top of `render3d.js`: where the
+  moon sits over it, its colour, the fog, the wind and the mist
 
 ## If the screen is stuck on the start card
 

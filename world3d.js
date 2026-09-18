@@ -234,14 +234,14 @@ export function broadleafGeometry() {
 }
 
 export function deadTreeGeometry() {
-  const parts = [paint(at(new THREE.CylinderGeometry(2.2, 4.6, 70, 6), 0, 35, 0), 0x4b4740)];
+  const parts = [paint(at(new THREE.CylinderGeometry(2.2, 4.6, 70, 6), 0, 35, 0), 0x4a463e)];
   const limbs = [[.9, .5, 62, 30], [-1.1, .7, 52, 26], [.2, .9, 70, 22], [-2.4, .6, 44, 20]];
   for (const [yaw, tilt, y, len] of limbs) {
     const b = new THREE.CylinderGeometry(.8, 1.9, len, 5);
     b.translate(0, len / 2, 0);
     b.rotateZ(tilt);
     b.rotateY(yaw);
-    parts.push(paint(at(b, 0, y, 0), 0x4b4740));
+    parts.push(paint(at(b, 0, y, 0), 0x4a463e));
   }
   return mergeGeometries(parts);
 }
@@ -268,12 +268,19 @@ export function rockGeometry() {
 
 // A few spikes of grass in a clump. Tiny, but there are hundreds of them.
 export function tuftGeometry(colour) {
+  // Six fine blades rather than four fat ones. A three-sided cone is still the
+  // cheapest thing that reads as a blade of grass, but at the old width they
+  // looked like splinters once there were thousands of them.
   const parts = [];
-  const blades = [[0, 0, 0, 1], [3.4, 0, 1.6, .78], [-3, 0, 2.4, .7], [1.2, 0, -3.2, .62]];
-  for (const [x, , z, s] of blades) {
-    const b = new THREE.ConeGeometry(1.5 * s, 17 * s, 3, 1);
-    b.translate(0, 17 * s / 2, 0);
-    b.rotateZ((hash2(Math.round(x * 13), Math.round(z * 17)) - .5) * .5);
+  const blades = [[0, 0, 1], [3.4, 1.6, .82], [-3, 2.4, .74], [1.2, -3.2, .66],
+                  [-2.2, -2.4, .6], [4.1, -1.2, .55]];
+  for (const [x, z, s] of blades) {
+    // Open-ended: the cap sits underground and is never seen, and there are
+    // a great many of these.
+    const b = new THREE.ConeGeometry(1.05 * s, 22 * s, 3, 1, true);
+    b.translate(0, 22 * s / 2, 0);
+    b.rotateZ((hash2(Math.round(x * 13), Math.round(z * 17)) - .5) * .55);
+    b.rotateY(hash2(Math.round(z * 29), Math.round(x * 11)) * 6.283);
     parts.push(at(b, x, 0, z));
   }
   return paint(mergeGeometries(parts), colour);
@@ -286,19 +293,22 @@ export function propGeometry(type) {
   if (type === 'grass') return tuftGeometry(0x6b8e45);
   if (type === 'flower') {
     const stem = paint(at(new THREE.CylinderGeometry(.5, .7, 19, 4), 0, 9.5, 0), 0x6f9349);
-    const head = paint(at(new THREE.IcosahedronGeometry(4.2, 0), 0, 21, 0), 0xe7d06a);
+    const head = paint(at(new THREE.IcosahedronGeometry(5.4, 0), 0, 23, 0), 0xf0dc86);
     return mergeGeometries([stem, head]);
   }
   if (type === 'hay') {
-    const g = new THREE.ConeGeometry(30, 62, 9, 2);
-    const pos = g.attributes.position;
-    for (let i = 0; i < pos.count; i++) {   // belly it out, so it slumps like real straw
-      const y = pos.getY(i), t = (y + 31) / 62;
-      const bulge = 1 + Math.sin(t * Math.PI) * .26;
-      pos.setXYZ(i, pos.getX(i) * bulge, y, pos.getZ(i) * bulge);
-    }
-    g.computeVertexNormals();
-    return paint(at(g, 0, 31, 0), 0x9c7d3c);
+    // Round and slumped, with a thatched peak and a darker course where the
+    // bottom has been rained on. Plenty of segments, because at this size the
+    // facets of a coarse one read as canvas panels rather than straw.
+    const dome = new THREE.SphereGeometry(30, 16, 10);
+    dome.scale(1, 1.12, 1);
+    const cap = new THREE.ConeGeometry(13, 28, 12);
+    const foot = new THREE.CylinderGeometry(30.5, 33, 9, 16);
+    return mergeGeometries([
+      paint(at(dome, 0, 28, 0), 0xb08f47),
+      paint(at(cap, 0, 62, 0), 0xc3a257),
+      paint(at(foot, 0, 5, 0), 0x87692f)
+    ]);
   }
   if (type === 'bale') {
     const g = new THREE.CylinderGeometry(20, 20, 40, 12);
@@ -306,35 +316,35 @@ export function propGeometry(type) {
     return paint(at(g, 0, 20, 0), 0xa3853f);
   }
   if (type === 'column') {
-    const base = paint(at(new THREE.BoxGeometry(34, 9, 34), 0, 4.5, 0), 0x474c55);
-    const shaft = paint(at(new THREE.CylinderGeometry(11, 12.5, 96, 10), 0, 57, 0), 0x585e68);
+    const base = paint(at(new THREE.BoxGeometry(34, 9, 34), 0, 4.5, 0), 0x4f4c46);
+    const shaft = paint(at(new THREE.CylinderGeometry(11, 12.5, 96, 10), 0, 57, 0), 0x625f57);
     const top = new THREE.CylinderGeometry(11.5, 11, 12, 10);
     const pos = top.attributes.position;       // snapped off, not sawn off
     for (let i = 0; i < pos.count; i++) {
       if (pos.getY(i) > 0) pos.setY(i, pos.getY(i) - hash2(i * 7, 3) * 11);
     }
     top.computeVertexNormals();
-    return mergeGeometries([base, shaft, paint(at(top, 0, 110, 0), 0x646a75)]);
+    return mergeGeometries([base, shaft, paint(at(top, 0, 110, 0), 0x6e6a61)]);
   }
   if (type === 'fallen') {
     const g = new THREE.CylinderGeometry(11, 12, 96, 10);
     g.rotateZ(Math.PI / 2);
     g.rotateY(.6);
-    return paint(at(g, 0, 11, 0), 0x545a64);
+    return paint(at(g, 0, 11, 0), 0x5c584f);
   }
   if (type === 'arch') {
-    const legL = paint(at(new THREE.BoxGeometry(22, 140, 26), -46, 70, 0), 0x585e68);
-    const legR = paint(at(new THREE.BoxGeometry(22, 104, 26), 46, 52, 0), 0x585e68);
+    const legL = paint(at(new THREE.BoxGeometry(22, 140, 26), -46, 70, 0), 0x625f57);
+    const legR = paint(at(new THREE.BoxGeometry(22, 104, 26), 46, 52, 0), 0x625f57);
     const span = new THREE.TorusGeometry(46, 12, 6, 14, Math.PI * .62);
     span.rotateZ(Math.PI * .19);
-    return mergeGeometries([legL, legR, paint(at(span, 0, 140, 0), 0x5f656f)]);
+    return mergeGeometries([legL, legR, paint(at(span, 0, 140, 0), 0x67635b)]);
   }
   // rubble
   const bits = [[-8, 7, 2, 9], [7, 6, -3, 8], [0, 15, 1, 6.5], [-2, 5, -8, 5]];
   return mergeGeometries(bits.map(([x, y, z, r], i) => {
     const g = new THREE.IcosahedronGeometry(r, 0);
     g.rotateY(i * 1.7); g.rotateX(i * .9);
-    return paint(at(g, x, y, z), i % 2 ? 0x5d636d : 0x4e545d);
+    return paint(at(g, x, y, z), i % 2 ? 0x666057 : 0x57534a);
   }));
 }
 
@@ -411,28 +421,45 @@ export function buildLandmark(type) {
       g.add(cone);
     }
   } else if (type === 'mill') {
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(42, 68, 330, 12), mat(0x7d6a4c));
-    tower.position.y = 165; tower.castShadow = true; g.add(tower);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(56, 76, 12), mat(0x4e4636));
-    cap.position.y = 368; cap.castShadow = true; g.add(cap);
+    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(76, 84, 32, 14), mat(0x6f6350));
+    plinth.position.y = 16; plinth.castShadow = true; g.add(plinth);
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(44, 74, 300, 14), mat(0xa89577, .95));
+    tower.position.y = 150; tower.castShadow = true; g.add(tower);
+    // The balcony is small, but it is most of what says "windmill" rather than
+    // "tower" when all you can see is a shape against the sky.
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(54, 6, 6, 18), mat(0x5c5140));
+    ring.rotation.x = Math.PI / 2; ring.position.y = 198; g.add(ring);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(58, 80, 14), mat(0x4e4636));
+    cap.position.y = 338; cap.castShadow = true; g.add(cap);
+
     const sails = new THREE.Group();
     for (let i = 0; i < 4; i++) {
-      const s = new THREE.Mesh(new THREE.BoxGeometry(18, 150, 5), mat(0xd8c79a, .7));
-      s.position.y = 82;
-      s.rotation.z = i * Math.PI / 2;
-      s.position.set(Math.sin(i * Math.PI / 2) * -82, Math.cos(i * Math.PI / 2) * 82, 0);
-      sails.add(s);
+      const arm = new THREE.Group();
+      const spar = new THREE.Mesh(new THREE.BoxGeometry(8, 200, 8), mat(0x5c5140));
+      spar.position.y = 100; arm.add(spar);
+      const sheet = new THREE.Mesh(new THREE.BoxGeometry(32, 156, 4), mat(0xe8dcb8, .8));
+      sheet.position.set(22, 108, 0); sheet.castShadow = true; arm.add(sheet);
+      arm.rotation.z = i * Math.PI / 2;
+      sails.add(arm);
     }
-    sails.position.set(0, 352, 50);
+    sails.position.set(0, 322, 68);
     g.add(sails);
     g.userData.spin = sails;
-    const door = new THREE.Mesh(new THREE.BoxGeometry(32, 90, 8), mat(0x3a3226));
-    door.position.set(0, 45, 62); g.add(door);
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(14, 10, 8), mat(0x4e4636));
+    hub.position.set(0, 322, 62); g.add(hub);
+
+    const door = new THREE.Mesh(new THREE.BoxGeometry(34, 92, 12), mat(0x3a3226, 1));
+    door.position.set(0, 46, 72); g.add(door);
+    for (const [ang, y] of [[.6, 210], [-.8, 262], [2.4, 150]]) {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(20, 28, 14), mat(0x30291f, 1));
+      win.position.set(Math.sin(ang) * 54, y, Math.cos(ang) * 54);
+      win.rotation.y = ang; g.add(win);
+    }
   } else {
     // the broken tower
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(52, 74, 340, 10), mat(0x565c66));
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(52, 74, 340, 10), mat(0x5e5a51));
     body.position.y = 170; body.castShadow = true; g.add(body);
-    const crown = new THREE.Mesh(new THREE.CylinderGeometry(54, 52, 60, 10), mat(0x646a75));
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(54, 52, 60, 10), mat(0x6e6a61));
     const pos = crown.geometry.attributes.position;
     for (let i = 0; i < pos.count; i++) {             // a torn-off top, not a flat one
       if (pos.getY(i) > 0) pos.setY(i, pos.getY(i) - hash2(i * 13, 5) * 54);
