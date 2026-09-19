@@ -19,7 +19,7 @@
    turn buttons and the compass all come out backwards.
 --------------------------------------------------------------------------- */
 import * as THREE from './vendor/three.module.min.js';
-import { mergeGeometries } from './vendor/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from './vendor/utils/BufferGeometryUtils.js';
 
 export function v3(x, y, z) { return new THREE.Vector3(x, z || 0, y); }
 export function setPos(obj, x, y, z) { obj.position.set(x, z || 0, y); }
@@ -211,9 +211,77 @@ export function makeTerrain(L, curveOf) {
    every one of the fourteen builders below would otherwise have to be handed
    it and pass it on, for something that never changes while a land is alive.
 --------------------------------------------------------------------------- */
-let STYLE = { toon: false, ramp: null, smoothFolk: false };
+let STYLE = { toon: false, ramp: null, smoothFolk: false, ink: null };
 
-export function setStyle(s) { Object.assign(STYLE, s); }
+/* ---------------------------------------------------------------------------
+   THE INK LINE
+
+   A drawing holds a shape apart from what is behind it with a line round the
+   outside. This does it the old way: build the shape a second time a little
+   larger, turn it inside out, and paint it dark. The larger copy is hidden
+   behind the real one everywhere except round the edge, where it shows as a
+   line of even thickness.
+
+   Two things make or break it.
+
+   The copy is grown by pushing every corner out along the way its surface
+   faces. That only closes up if the corners are SHARED between the faces that
+   meet there - on a box built as six separate flats, each flat marches off in
+   its own direction and the shape comes apart at the seams. So the copy is
+   welded and its normals recomputed first, whatever the original was doing.
+   It is a copy, so the original keeps its own shading either way.
+
+   And the line is hung on the shape it belongs to rather than beside it, so an
+   arm that swings takes its outline with it and nothing has to be kept in step.
+--------------------------------------------------------------------------- */
+function inkMaterial(colour, width) {
+  const m = new THREE.MeshBasicMaterial({
+    color: colour,
+    side: THREE.BackSide,   // only the far side of the bigger copy is drawn
+    fog: true               // a far-off figure should not keep a crisp black line
+  });
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uInk = { value: width };
+    sh.vertexShader = 'uniform float uInk;\n' + sh.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+       transformed += normalize(normal) * uInk;`
+    );
+  };
+  m.customProgramCacheKey = () => 'ink';
+  return m;
+}
+
+/* Give one shape its line. The line becomes a child of the shape, so it
+   inherits every move the shape makes for nothing. */
+function inkOne(mesh, mat) {
+  const shell = mergeVertices(mesh.geometry.clone());
+  shell.computeVertexNormals();
+  const line = new THREE.Mesh(shell, mat);
+  line.castShadow = false;       // it is not a thing, it is a line round a thing
+  line.receiveShadow = false;
+  line.userData.isInk = true;
+  mesh.add(line);
+}
+
+/* Give everything in a group its line. Anything built to glow is left alone:
+   a shard or an eye is a light, and a light does not have an edge drawn on it. */
+export function inkGroup(g) {
+  if (!STYLE.ink) return g;
+  const meshes = [];
+  g.traverse(o => {
+    if (o.isMesh && !o.userData.isInk && !(o.material && o.material.isMeshBasicMaterial)) meshes.push(o);
+  });
+  for (const m of meshes) inkOne(m, STYLE.ink);
+  return g;
+}
+
+export function setStyle(s) {
+  Object.assign(STYLE, s);
+  if (STYLE.ink) STYLE.ink.dispose();
+  STYLE.ink = (STYLE.inkColour !== undefined && STYLE.inkWidth > 0)
+    ? inkMaterial(STYLE.inkColour, STYLE.inkWidth) : null;
+}
 
 /* The ramp. Each number is how much of the light reaches a surface in that
    band, from the side facing away to the side facing the moon. Nearest-neighbour
@@ -623,7 +691,7 @@ export function buildPlayer() {
   face.position.set(7, 56, 0); g.add(face);
 
   g.userData = { legs, arms, cloak };
-  return g;
+  return inkGroup(g);
 }
 
 export function buildLuna() {
@@ -639,7 +707,7 @@ export function buildLuna() {
   const light = new THREE.PointLight(0xf5d76e, 0, 300, 2);
   light.position.set(0, 54, 11); g.add(light);
   g.userData = { orb, light };
-  return g;
+  return inkGroup(g);
 }
 
 const CREATURE_COLOUR = {
@@ -669,7 +737,7 @@ export function buildCreature(kind) {
   spark.position.y = 52;
   g.add(spark);
   g.userData = { spark };
-  return g;
+  return inkGroup(g);
 }
 
 export function buildMonster(boss) {
@@ -706,7 +774,7 @@ export function buildMonster(boss) {
   }
   g.userData.eyes = eyes;
   if (boss) g.scale.setScalar(1.7);
-  return g;
+  return inkGroup(g);
 }
 
 export function buildCritter(kind) {
@@ -732,7 +800,7 @@ export function buildCritter(kind) {
   }
   parts.push(paint(at(new THREE.SphereGeometry(1.3, 5, 4), 7.5, 12, 2), 0x1d2430));
   g.add(new THREE.Mesh(mergeGeometries(parts), vmat));
-  return g;
+  return inkGroup(g);
 }
 
 /* ---------------------------------------------------------------------------

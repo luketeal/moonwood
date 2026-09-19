@@ -125,6 +125,13 @@ const LOOK = {
     bands: [0.22, 0.62, 1.00],
     smoothFolk: true, // round off him and the creatures, so the ramp has a curve
                       // to cut across; the trees stay faceted either way
+    /* The line round him and the creatures. Not black: a black line in a blue
+       night reads as a hole cut in the picture. This is the dark end of the
+       same blue the land is lit with, so it sits in the scene rather than on
+       top of it. Width is in world units, so a figure far off gets a finer
+       line than one up close, which is what a drawing would do anyway. */
+    inkColour: 0x0d1a2b,
+    inkWidth: 1.8,
     exposure: 1.15,   // spreads the picture over more of the range before it clips
     fog: 1.15,        // MORE fog, not less - see the note below
     key: 2.00,        // a definite light source, twice what the photograph used
@@ -185,12 +192,24 @@ export function createRenderer(canvas, opts) {
   /* How surfaces are shaded is decided before a single shape is made, because
      the material is chosen as each shape is built. */
   let ramp = null;
+
+  /* The ink line costs a second draw for every part of every figure - about a
+     quarter more draw calls across a land, for almost no extra triangles. That
+     is affordable on anything that can manage the glow, and it is exactly what
+     a phone already struggling cannot spare. So the lowest tier, which is where
+     something has already gone wrong, goes without it. Nothing else about the
+     grade changes: it is still drawn in flat steps, just without the line. */
+  function inkWanted() { return (K.inkWidth || 0) > 0 && quality !== 'low'; }
+
   function applyStyle() {
     if (K.toon && K.bands) {
       if (ramp) ramp.dispose();
       ramp = W.toonRamp(K.bands);
     }
-    W.setStyle({ toon: !!K.toon, ramp, smoothFolk: !!K.smoothFolk });
+    W.setStyle({
+      toon: !!K.toon, ramp, smoothFolk: !!K.smoothFolk,
+      inkColour: K.inkColour, inkWidth: inkWanted() ? K.inkWidth : 0
+    });
   }
   applyStyle();
 
@@ -1281,7 +1300,8 @@ export function createRenderer(canvas, opts) {
      loses the land you were standing in. */
   function grade(partial) {
     if (!partial) return Object.assign({ look }, K);
-    const restyle = 'toon' in partial || 'bands' in partial || 'smoothFolk' in partial;
+    const restyle = 'toon' in partial || 'bands' in partial || 'smoothFolk' in partial
+                 || 'inkColour' in partial || 'inkWidth' in partial;
     Object.assign(K, partial);
     renderer.toneMapping = TONE[K.tone] || renderer.toneMapping;
     if (restyle) {
@@ -1312,7 +1332,17 @@ export function createRenderer(canvas, opts) {
 
   function setQuality(q) {
     if (!QUALITY[q] || q === quality) return;
+    const hadInk = inkWanted();
     quality = q; Q = QUALITY[q];
+    /* Whether the figures are inked is decided as they are built, so crossing
+       the line that turns it off means building them again. Only when it
+       actually flips - a step between high and med must not throw a forest
+       away for nothing. */
+    if (inkWanted() !== hadInk) {
+      applyStyle();
+      for (const id in builtLands) { scrapLand(builtLands[id]); delete builtLands[id]; }
+      curLand = null; curId = null;
+    }
     renderer.shadowMap.enabled = !!Q.shadow;
     moon.castShadow = !!Q.shadow;
     if (Q.shadow) moon.shadow.mapSize.set(Q.shadow, Q.shadow);
@@ -1358,8 +1388,10 @@ export function createRenderer(canvas, opts) {
         exposure: +renderer.toneMappingExposure.toFixed(4)
       }
     };
+    out.ink = 0;
     scene.traverse(o => {
       out.objects++;
+      if (o.isMesh && o.userData.isInk) out.ink++;
       if (curLand && o === curLand.water) out.water = { y: o.position.y, visible: o.visible, frustum: o.frustumCulled };
     });
     return out;

@@ -233,6 +233,20 @@ The river keeps the old material, because it is the one surface that still needs
 reflections and a roughness to put the moon on the water, and a toon material
 has neither.
 
+Finally, him, Luna, the creatures and the monsters get a line drawn round them,
+the old way: each shape is built a second time a little larger, turned inside
+out and painted dark, so the bigger copy is hidden behind the real one
+everywhere except round the edge. The line is a dark blue rather than black,
+because a black line in a blue night reads as a hole cut in the picture, and it
+fades with distance like everything else. Only the figures get one - a line
+round all six hundred pines would be a different and much more expensive job.
+
+That line costs a second draw for every part of every figure, which is about a
+quarter more draw calls across a land for almost no extra triangles. `?gfx=low`
+therefore goes without it: the lowest tier is where something has already gone
+wrong, and it is the one place that cannot spare the draws. Everything else
+about the grade stays.
+
 Two of those numbers came out the opposite way round to what was expected, and
 both were settled by measuring rather than by arguing about it:
 
