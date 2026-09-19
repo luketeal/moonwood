@@ -64,9 +64,11 @@ function aimKey(m) {
 aimKey(mood);
 
 const QUALITY = {
-  high: { shadow: 1536, bloom: true, dpr: 2, undergrowth: 4200, shadowDist: 660 },
-  med: { shadow: 1024, bloom: true, dpr: 1.75, undergrowth: 1800, shadowDist: 520 },
-  low: { shadow: 0, bloom: false, dpr: 1.3, undergrowth: 900, shadowDist: 0 }
+  high: { shadow: 1536, bloom: true, dpr: 2, undergrowth: 4200, shadowDist: 660, msaa: 4 },
+  med: { shadow: 1024, bloom: true, dpr: 1.75, undergrowth: 1800, shadowDist: 520, msaa: 2 },
+  // low does not use the picture passes at all, so it draws straight to the
+  // canvas and gets its smoothing from `antialias: true` below.
+  low: { shadow: 0, bloom: false, dpr: 1.3, undergrowth: 900, shadowDist: 0, msaa: 0 }
 };
 
 export function createRenderer(canvas, opts) {
@@ -368,10 +370,23 @@ export function createRenderer(canvas, opts) {
   /* -------------------------------------------------------------------------
      THE PICTURE PASSES
   ------------------------------------------------------------------------- */
-  let composer = null, bloomPass = null;
+  let composer = null, bloomPass = null, composerMsaa = -1;
   function buildComposer() {
     if (composer) composer.dispose();
-    composer = new EffectComposer(renderer);
+    /* The composer makes its own target if it is not given one, and the one it
+       makes has no multisampling. Everything then gets drawn into that instead
+       of into the canvas, so `antialias: true` on the renderer never comes into
+       it and every edge in the game is a staircase - on high and med, which are
+       the two that use these passes at all. Handing it a target that IS
+       multisampled is the whole of the fix. */
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, {
+      type: THREE.HalfFloatType,
+      samples: Q.msaa
+    });
+    target.texture.name = 'EffectComposer.rt1';
+    composerMsaa = Q.msaa;
+    composer = new EffectComposer(renderer, target);
     composer.addPass(new RenderPass(scene, camera));
     // The threshold sits ABOVE white on purpose. Only things that are genuinely
     // brighter than daylight - the shards, the fires, the fireflies, the moon -
@@ -1118,7 +1133,9 @@ export function createRenderer(canvas, opts) {
     renderer.shadowMap.enabled = !!Q.shadow;
     moon.castShadow = !!Q.shadow;
     if (Q.shadow) moon.shadow.mapSize.set(Q.shadow, Q.shadow);
-    if (Q.bloom && !composer) buildComposer();
+    // samples cannot be changed on a target that already exists, so a move
+    // between tiers that want different amounts of it builds a new one.
+    if (Q.bloom && (!composer || composerMsaa !== Q.msaa)) buildComposer();
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
     resize();
   }

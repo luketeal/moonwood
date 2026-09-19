@@ -1076,9 +1076,11 @@ function draw(dt){
    If the browser cannot do 3-D at all there is nothing to fall back to, so say
    so plainly rather than showing a black screen.
 --------------------------------------------------------------------------- */
+/* ?gfx=high|med|low picks the quality by hand. Asking for one also pins it:
+   see watchSpeed below. */
+const askedGfx=new URLSearchParams(location.search).get('gfx');
 try{
- const asked=new URLSearchParams(location.search).get('gfx');
- R=createRenderer(canvas,{curveOf:curve,quality:asked||'high'});
+ R=createRenderer(canvas,{curveOf:curve,quality:askedGfx||'high'});
 }catch(e){
  const el=document.getElementById('err');
  el.style.display='block';
@@ -1088,9 +1090,14 @@ try{
 resize();
 
 /* Phones vary enormously. If the picture is not keeping up, quietly drop a step
-   - shadows first, then the glow - rather than letting it stutter. */
+   - shadows first, then the glow - rather than letting it stutter.
+
+   Unless the quality was asked for by name in the address. Someone who has
+   typed ?gfx=high means it, and a picture that quietly demotes itself halfway
+   through is no use for comparing one build against another. */
 let frameTimes=[], lastFrame=0;
 function watchSpeed(now){
+ if(askedGfx)return;
  const dt=now-lastFrame; lastFrame=now;
  if(dt>0&&dt<400)frameTimes.push(dt);
  if(frameTimes.length<100)return;
@@ -1102,7 +1109,7 @@ function watchSpeed(now){
 
 // A handle on the innards, so the game can be poked at from the browser's
 // console when something needs looking at.
-window.MW={get p(){return p},get R(){return R},get land(){return land()},cam:cam};
+window.MW={get p(){return p},get R(){return R},get land(){return land()},get battle(){return battle},cam:cam};
 
 let lastMs=0;
 function loop(now){

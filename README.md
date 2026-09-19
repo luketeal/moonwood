@@ -103,6 +103,41 @@ into a stone you cannot see" feel exactly the same. In a fight he takes a step b
 swings round to the side, so you can see the two of them squaring up - and they
 turn to face each other, as do creatures when he comes near them.
 
+## Comparing one look against another
+
+Changing the way the game looks is hard to judge by eye. It is a dark game, and
+a change that helps and a change that hurts both just look like "Moonwood, at
+night" an hour later. So there is a harness that takes the same four pictures
+every time:
+
+```sh
+npm i -D playwright && npx playwright install chromium   # once
+node tools/shots.mjs --tag before
+#   ... change something ...
+node tools/shots.mjs --tag after
+```
+
+That leaves `shots/before-*.png` and `shots/after-*.png`: the same four places -
+the pines, the river, the open field and the broken tower - stood in from the
+same spot, lit the same way, and frozen at the same instant, so the only thing
+that differs between the two sets is what you changed. `--list` names the four
+and says what each one is for.
+
+Everything that moves by itself is worked out from the clock, so the harness
+stops the clock before it takes the picture: the wind, the water, the fireflies
+and the campfires all land in the same place in both runs. The dials and buttons
+are hidden unless you ask for them with `--hud`, and it refuses to photograph a
+fight, because a fight dims the moon and swings the camera and the picture would
+be of the fight rather than of the place.
+
+**It is for how the game looks, not for how fast it runs.** Headless Chromium
+draws with software rather than with a graphics chip, and a frame time measured
+from it means nothing. Speed still has to be checked on a real phone.
+
+`?gfx=high`, `?gfx=med` or `?gfx=low` on the end of the address picks the
+quality by hand, and asking for one by name also pins it - the game will not
+quietly drop a step underneath you, which is what makes two runs comparable.
+
 ## Publishing it
 
 The game is published by `.github/workflows/deploy.yml`, and there is one live
@@ -148,6 +183,11 @@ to build. What makes it look like anything is the lighting, not the models:
   surface the moon happens to be catching never does, however bright it looks
 - **The sky reflected**, baked once per land, which is what puts a moon on the
   river and a little cold light on everything else
+- **Smoothed edges**, four samples' worth on high and two on med. The bloom pass
+  draws the whole scene into a picture of its own before it gets to the screen,
+  so the smoothing has to be asked for on *that* picture: ask the canvas alone
+  and every edge in the game stays a staircase. Low skips the passes and draws
+  straight to the canvas, which smooths itself
 
 ### The three lands look different on purpose
 
@@ -177,7 +217,9 @@ the whole feel of it more than any other single number.
 
 The game watches its own frame rate and quietly steps down if it cannot keep
 up - shadows go first, then the glow. You can also force a setting by adding
-`?gfx=low`, `?gfx=med` or `?gfx=high` to the address.
+`?gfx=low`, `?gfx=med` or `?gfx=high` to the address. Asking for one by name
+pins it: somebody who has typed `?gfx=high` means it, and the game will not
+step down underneath them.
 
 ## The files
 
@@ -186,6 +228,8 @@ up - shadows go first, then the glow. You can also force a setting by adding
 - `world3d.js` — the shapes everything is built from, and the lie of the land
 - `vendor/` — three.js and the four post-processing passes, kept in the repo so
   the game never depends on anyone else's server staying up
+- `tools/shots.mjs` — takes the same four pictures of the game every time, for
+  telling whether a change to the way it looks was an improvement
 - `.nojekyll` — tells GitHub to publish the files exactly as written
 - `.github/workflows/deploy.yml` — publishes the site, and lets you put any
   branch live for testing
