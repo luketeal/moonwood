@@ -130,6 +130,17 @@ are hidden unless you ask for them with `--hud`, and it refuses to photograph a
 fight, because a fight dims the moon and swings the camera and the picture would
 be of the fight rather than of the place.
 
+The light and the camera are put where they belong rather than waited for. Both
+ease towards their target a frame at a time, which is right in play and useless
+here: the light wants about a hundred and thirty frames to arrive and headless
+Chromium draws this scene in software at well under a frame a second, and the
+camera is worse than slow - left alone it orbits him for ever, so there is no
+resting place to wait for at all. Snapping both, in the same breath as stopping
+the clock, took the difference between two runs of the same build from a quarter
+of the picture down to about one pixel in seven hundred. (Snapping the camera
+does mean it no longer slides around whatever is behind him the way it does in
+play, so a scene has to be stood somewhere with nothing directly at his back.)
+
 **It is for how the game looks, not for how fast it runs.** Headless Chromium
 draws with software rather than with a graphics chip, and a frame time measured
 from it means nothing. Speed still has to be checked on a real phone.
@@ -137,6 +148,10 @@ from it means nothing. Speed still has to be checked on a real phone.
 `?gfx=high`, `?gfx=med` or `?gfx=low` on the end of the address picks the
 quality by hand, and asking for one by name also pins it - the game will not
 quietly drop a step underneath you, which is what makes two runs comparable.
+`?look=anime` or `?look=classic` picks the grade the same way.
+
+`node tools/shots.mjs --tag x --look classic,anime` photographs both in one run,
+so there is nothing to stash or rebuild to compare them.
 
 ## Publishing it
 
@@ -188,6 +203,39 @@ to build. What makes it look like anything is the lighting, not the models:
   so the smoothing has to be asked for on *that* picture: ask the canvas alone
   and every edge in the game stays a staircase. Low skips the passes and draws
   straight to the canvas, which smooths itself
+
+### Two grades
+
+MOOD, below, says what each land is like. There is a second table next to it,
+LOOK, which says how the whole game is developed afterwards - the same three
+lands, printed two different ways. `?look=classic` is the game as it was, aiming
+at a photograph of a wood at night. `?look=anime` is aiming at a drawing of one:
+a tone curve that keeps colour instead of washing it out at the top, much less
+of the ambient fill that softened every edge between lit and unlit, a stronger
+key and rim to put that edge back, and shadows at full strength.
+
+Two of those numbers came out the opposite way round to what was expected, and
+both were settled by measuring rather than by arguing about it:
+
+- **Fog was turned up, not down.** Haze is supposed to flatten a picture. Here
+  it does the reverse, because the fog is the colour of the low sky, which is
+  *lighter* than the wood in front of it - so the fog is what makes a far tree
+  read differently from a near one. Taking it away pulled the distances
+  together and measured as less separation, not more.
+- **Cutting the fill on its own does nothing.** Less ambient light does harden
+  the edge between lit and unlit, but by itself it just darkens everything,
+  because the fill was lighting the lit side too. It only buys anything if the
+  key comes up to meet it. The gap between them is the point, not the cut.
+
+The Ruins is the exception that proves the fog rule, and has its own lighter fog
+in a `per` block: it is already flattened by four sheets of drifting mist, so it
+has no distinct near and far for fog to tell apart, and more of it only
+compressed what separation was left.
+
+There is a straight trade between the two things the grade is for - every
+further step of contrast costs saturation, because brightness pushes colour up
+into the part of the curve where it washes out. The numbers sit at the far end
+of where both are still better than the photograph was.
 
 ### The three lands look different on purpose
 

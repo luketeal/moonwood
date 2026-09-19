@@ -23,6 +23,9 @@
      --out <dir>       where to put them                (default "shots")
      --scenes a,b      only these scenes                (default all)
      --quality <q>     high | med | low                 (default "high")
+     --look <a,b>      which grade(s) to photograph: classic, anime, or both
+                       comma-separated. Each gets its own file.
+                       (default "classic")
      --width, --height picture size                     (default 900x650)
      --hud             leave the dials and buttons in (they are hidden by
                        default, so what is compared is the 3-D picture)
@@ -50,6 +53,12 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
    x and y are where he stands; `a` is the way he is facing, and the camera
    sits behind and above that. The numbers come from the lands themselves -
    the Great Pine is at 1800,900, the river crosses 2200,1400, and so on.
+
+   Two things a spot has to avoid. It must not be within 42 of a monster, or
+   walking him in starts a fight and the picture is of the fight. And because
+   the camera is snapped straight behind him (see below) rather than being
+   allowed to slide round obstacles the way it does in play, it must not have
+   a column or a trunk directly behind him either, or that is the picture.
 --------------------------------------------------------------------------- */
 const SCENES = [
   { name: 'moonwood-pines', land: 'moonwood', x: 1350, y: 1500, a: -0.93,
@@ -58,7 +67,7 @@ const SCENES = [
     why: 'the river - water shading and the moon lying on it' },
   { name: 'sunfield-mill',  land: 'sunfield', x: 1700, y: 1900, a: -0.46,
     why: 'open country - grass, wind, a landmark against the sky' },
-  { name: 'ruins-tower',    land: 'ruins',    x: 1700, y: 1400, a: 0,
+  { name: 'ruins-tower',    land: 'ruins',    x: 1600, y: 1750, a: -0.33,
     why: 'mist and stone - the flattest, lowest-contrast land there is' }
 ];
 
@@ -69,7 +78,7 @@ const FROZEN_AT = 1700000000000;
 
 /* ------------------------------------------------------------------ args -- */
 function parseArgs(argv) {
-  const o = { tag: 'shot', out: 'shots', scenes: null, quality: 'high', width: 900, height: 650, list: false, hud: false };
+  const o = { tag: 'shot', out: 'shots', scenes: null, quality: 'high', width: 900, height: 650, list: false, hud: false, looks: ['classic'] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--list') { o.list = true; continue; }
@@ -80,11 +89,13 @@ function parseArgs(argv) {
     else if (k === '--out') o.out = v;
     else if (k === '--scenes') o.scenes = v.split(',').map(s => s.trim()).filter(Boolean);
     else if (k === '--quality') o.quality = v;
+    else if (k === '--look') o.looks = v.split(',').map(x => x.trim()).filter(Boolean);
     else if (k === '--width') o.width = Number(v);
     else if (k === '--height') o.height = Number(v);
     else throw new Error(`no such option: ${k}`);
   }
   if (!['high', 'med', 'low'].includes(o.quality)) throw new Error(`--quality must be high, med or low`);
+  for (const l of o.looks) if (!['classic', 'anime'].includes(l)) throw new Error(`--look must be classic or anime, not "${l}"`);
   if (!Number.isFinite(o.width) || !Number.isFinite(o.height)) throw new Error('--width and --height must be numbers');
   return o;
 }
@@ -128,6 +139,18 @@ async function loadPlaywright() {
   throw new Error('Playwright is not installed. Try:  npm i -D playwright && npx playwright install chromium');
 }
 
+/* Put the light and the camera where they belong, rather than waiting for them
+   to drift there.
+
+   Both ease towards their target a frame at a time, which is right in play and
+   useless here. The light needs about a hundred and thirty frames to arrive,
+   and headless Chromium draws this scene in software at well under a frame a
+   second - so waiting honestly would be minutes per picture. The camera is
+   worse than slow: left alone it orbits him for ever, so it has no resting
+   place to wait for at all.
+
+   Snapping both is exact, instant and the same on any machine. It happens in
+   the same breath as stopping time, just before the shutter - see below. */
 /* ------------------------------------------------------------------ main -- */
 const opt = parseArgs(process.argv.slice(2));
 
@@ -156,7 +179,7 @@ const problems = [];
 let shot = 0;
 
 try {
-  for (const scene of wanted) {
+  for (const scene of wanted) for (const lookName of opt.looks) {
     const page = await browser.newPage({
       viewport: { width: opt.width, height: opt.height },
       deviceScaleFactor: 1
@@ -169,7 +192,7 @@ try {
     // ?gfx pins the quality - which also stops the game quietly dropping a
     // step when the software renderer cannot keep up, so every run is drawn
     // to the same standard.
-    await page.goto(`http://127.0.0.1:${port}/index.html?gfx=${opt.quality}`, { waitUntil: 'networkidle' });
+    await page.goto(`http://127.0.0.1:${port}/index.html?gfx=${opt.quality}&look=${lookName}`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: /begin adventure/i }).click();
 
     // The renderer has to exist before we can put him anywhere.
@@ -181,8 +204,9 @@ try {
       window.MW.p.land = land; window.MW.p.x = x; window.MW.p.y = y; window.MW.p.a = a;
     }, scene);
 
-    // Let the land build and the camera swing round and settle behind him.
-    await page.waitForTimeout(6000);
+    // Let the land build and the camera swing round behind him.
+    await page.waitForTimeout(2500);
+
 
     /* Walking him into a land can put him on top of a monster, and a fight
        dims the moon, thickens the fog and swings the camera round - so the
@@ -199,13 +223,33 @@ try {
         '#hud,#storyhint,#message,#saved,#compass,#banner,#controls,#moves,#travel,#ability,#act,#ui{display:none!important}' });
     }
 
-    // Stop the clock, so the wind, the water and the fireflies are caught at
-    // the same instant in every run, then give it two frames to draw frozen.
-    await page.evaluate(t => { Date.now = () => t; }, FROZEN_AT);
+    /* Stop the clock. The wind, the water, the fireflies and the campfires are
+       all worked out from Date.now(), so pinning it catches every one of them
+       at the same instant in both runs.
+
+       The camera is snapped first, and only then is dt stopped. Order matters:
+       freezing dt on its own strands the camera wherever its slow idle drift
+       had got to, which framed the shot differently every run and moved the
+       measurements by ten points. */
+    await page.evaluate(t => {
+      // Snap and freeze together, in this order, without giving the page a
+      // frame in between: the camera's idle drift would otherwise creep back
+      // in during whatever ran between the two.
+      window.MW.R.snapLight();
+      window.MW.snapCam();
+      Date.now = () => t;
+      // Only now is it safe to stop dt, which also holds the idle drift, the
+      // hopping rabbits and the turning monsters still. Stopping it BEFORE the
+      // snap is what stranded the camera mid-swing.
+      const raf = window.requestAnimationFrame.bind(window);
+      const held = performance.now();
+      window.requestAnimationFrame = cb => raf(() => cb(held));
+    }, FROZEN_AT);
     await page.evaluate(() => new Promise(r =>
       requestAnimationFrame(() => requestAnimationFrame(r))));
 
-    const file = join(outDir, `${opt.tag}-${scene.name}.png`);
+    const stem = opt.looks.length > 1 ? `${opt.tag}-${lookName}-${scene.name}` : `${opt.tag}-${scene.name}`;
+    const file = join(outDir, `${stem}.png`);
     await page.screenshot({ path: file });
     shot++;
 
@@ -220,7 +264,7 @@ try {
     if (!lit || lit.lost) errs.push('the 3-D context was lost or never started');
 
     const where = relative(process.cwd(), file) || file;
-    if (errs.length) { problems.push(`${scene.name}: ${errs[0]}`); console.log(`  !  ${where}  (${errs[0]})`); }
+    if (errs.length) { problems.push(`${scene.name}/${lookName}: ${errs[0]}`); console.log(`  !  ${where}  (${errs[0]})`); }
     else console.log(`  ok ${where}`);
 
     await page.close();

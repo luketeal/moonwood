@@ -63,6 +63,88 @@ function aimKey(m) {
 }
 aimKey(mood);
 
+/* ---------------------------------------------------------------------------
+   THE GRADE
+
+   MOOD above says what each land is like. This says how the whole game is
+   developed afterwards - the same three lands, printed two different ways.
+
+   `classic` is the game as it was: filmic, hazy, softly lit, aiming at a
+   photograph of a wood at night.
+
+   `anime` is aiming at a drawing of one. A drawing separates things by giving
+   them flat areas of colour with a hard edge between lit and unlit, and it
+   keeps the colour saturated instead of letting bright things wash out to
+   white. So: a tone curve that holds colour rather than ACES, which throws it
+   away at the top; much less of the ambient fill that was softening every
+   terminator into a gradient; a stronger key and a much stronger rim to put
+   the edge back; darker, more definite shadows; and half the fog, because
+   uniform haze is the enemy of the flat separated planes a drawing wants.
+
+   Every number is a multiplier on what MOOD already says, so the three lands
+   keep their own character - Sunfield is still warm and open, the Ruins are
+   still smothered - they are just drawn rather than photographed.
+
+   Two of these came out the opposite way round to what was expected, and both
+   were settled by measuring rather than by arguing:
+
+   FOG. The obvious move was to cut it, on the grounds that haze flattens a
+   picture. Here it does the reverse. The fog is the colour of the low sky,
+   which is LIGHTER than the wood it sits in front of, so it is what makes a
+   far tree read differently from a near one. Taking it away pulled the
+   distances together and measured as LESS separation, not more. It is up
+   slightly instead.
+
+   AMBIENT FILL. Cutting the fill does harden the edge between lit and unlit,
+   but on its own it just darkens everything, because the fill was lighting the
+   lit side too. The fill only buys anything if the key comes up to meet it -
+   hence key at 2.0 against hemi at 0.42. The gap is the point, not the cut.
+
+   There is a straight trade between the two things this stage is for: every
+   further step of contrast costs saturation, because brightness pushes colour
+   up into the part of the curve where it washes out. These numbers sit at the
+   far end of where BOTH are still better than the photograph was - contrast up
+   28%, saturation up a little, the usable range up 27%. Pushing harder buys
+   contrast by spending the colour, which is the wrong way round for a drawing.
+--------------------------------------------------------------------------- */
+const LOOK = {
+  classic: {
+    tone: 'aces',
+    exposure: 1.00, fog: 1.00, key: 1.00, hemi: 1.00, rim: 1.00,
+    env: 1.00, shadow: 0.52
+  },
+  anime: {
+    tone: 'neutral',  // ACES throws colour away at the top; Neutral keeps it
+    exposure: 1.15,   // spreads the picture over more of the range before it clips
+    fog: 1.15,        // MORE fog, not less - see the note below
+    key: 2.00,        // a definite light source, twice what the photograph used
+    hemi: 0.42,       // and much less fill: the gap between the two is the edge
+    rim: 1.70,        // a drawing holds shapes apart with a line, not a gradient
+    env: 0.35,        // the sky fill flattens too, and stage 3 drops it entirely
+    shadow: 1.00,     // shadows at full strength instead of half
+
+    /* One land argues with the numbers above, and it is allowed to.
+
+       The Ruins is already flattened by four sheets of drifting mist, so it
+       has no distinct near and far for fog to tell apart - there, more fog
+       only compresses what little separation is left, and measured as LESS
+       contrast, not more. It is the exception that shows what the fog rule
+       above actually depends on. Given its own, lighter fog it comes out
+       ahead on both counts like the other two. */
+    per: {
+      ruins: { fog: 0.50, exposure: 1.18, key: 2.10, hemi: 0.40 }
+    }
+  }
+};
+
+const TONE = {
+  aces: THREE.ACESFilmicToneMapping,
+  neutral: THREE.NeutralToneMapping,
+  linear: THREE.LinearToneMapping,
+  agx: THREE.AgXToneMapping,
+  cineon: THREE.CineonToneMapping
+};
+
 const QUALITY = {
   high: { shadow: 1536, bloom: true, dpr: 2, undergrowth: 4200, shadowDist: 660, msaa: 4 },
   med: { shadow: 1024, bloom: true, dpr: 1.75, undergrowth: 1800, shadowDist: 520, msaa: 2 },
@@ -75,11 +157,14 @@ export function createRenderer(canvas, opts) {
   const curveOf = opts.curveOf;
   let quality = opts.quality || 'high';
   let Q = QUALITY[quality];
+  let look = LOOK[opts.look] ? opts.look : 'classic';
+  let K = LOOK[look];        // the grade as written
+  let KL = K;                // ...and as it applies in the land he is standing in
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setClearColor(0x06080f, 1);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.3;
+  renderer.toneMapping = TONE[K.tone];
+  renderer.toneMappingExposure = 1.3 * K.exposure;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.info.autoReset = false;   // counted by hand, so the post passes are included
@@ -181,7 +266,7 @@ export function createRenderer(canvas, opts) {
     envRT = pmrem.fromScene(envScene, 0, 100, 6000);
     skyUniforms.moonGain.value = mood.moonGain;
     scene.environment = envRT.texture;
-    scene.environmentIntensity = 1.0;
+    scene.environmentIntensity = KL.env;
   }
 
   /* -------------------------------------------------------------------------
@@ -194,7 +279,7 @@ export function createRenderer(canvas, opts) {
   moon.shadow.camera.far = 2600;
   moon.shadow.bias = -0.0006;
   moon.shadow.normalBias = 1.2;
-  moon.shadow.intensity = 0.52;
+  moon.shadow.intensity = K.shadow;
   scene.add(moon, moon.target);
 
   const hemi = new THREE.HemisphereLight(0x4878c4, 0x22422f, 1.95);
@@ -846,8 +931,10 @@ export function createRenderer(canvas, opts) {
 
   const stat = { draws: 0, tris: 0, buildMs: 0 };
 
+  let frames = 0;
   function render(s) {
     const L = s.L, t = s.now / 1000;
+    frames++;
     renderer.info.reset();
 
     if (curId !== L.id) {
@@ -862,6 +949,8 @@ export function createRenderer(canvas, opts) {
       skyUniforms.fogCol.value.copy(fogCol);
 
       mood = MOOD[L.id] || MOOD.moonwood;
+      KL = (K.per && K.per[L.id]) ? Object.assign({}, K, K.per[L.id]) : K;
+      moon.shadow.intensity = KL.shadow;
       aimKey(mood);
       skyUniforms.moonDir.value.copy(KEY);
       skyUniforms.moonCol.value.setRGB(mood.moonCol[0], mood.moonCol[1], mood.moonCol[2]);
@@ -869,13 +958,13 @@ export function createRenderer(canvas, opts) {
       moon.color.setHex(mood.key);
       hemi.color.setHex(mood.hemiSky); hemi.groundColor.setHex(mood.hemiGnd);
       hemiOnWater.color.setHex(mood.hemiSky); hemiOnWater.groundColor.setHex(mood.hemiGnd);
-      rim.color.setHex(mood.rim); rim.intensity = mood.rimI;
+      rim.color.setHex(mood.rim); rim.intensity = mood.rimI * KL.rim;
       rim.position.copy(KEY).multiplyScalar(-1).setY(0.45).normalize().multiplyScalar(1000);
       moonOnWater.position.copy(KEY).multiplyScalar(1000);
-      renderer.toneMappingExposure = mood.exposure;
+      renderer.toneMappingExposure = mood.exposure * KL.exposure;
       mist.group.visible = mood.mist > 0;
 
-      scene.fog = new THREE.FogExp2(0x000000, mood.fog);
+      scene.fog = new THREE.FogExp2(0x000000, mood.fog * KL.fog);
       scene.fog.color.copy(fogCol);
       renderer.setClearColor(fogCol, 1);
       bakeSky();
@@ -1080,12 +1169,14 @@ export function createRenderer(canvas, opts) {
     /* A fight darkens the land around him: the moon drops back, the fog closes
        in, and what light is left is on the two of them. */
     const fighting = !!s.battle;
-    moon.intensity += ((fighting ? mood.keyI * .38 : mood.keyI) - moon.intensity) * .08;
+    const wantKey = mood.keyI * KL.key, wantHemi = mood.hemiI * KL.hemi;
+    moon.intensity += ((fighting ? wantKey * .38 : wantKey) - moon.intensity) * .08;
     if (!moonOnWater.userData.hold) moonOnWater.intensity = moon.intensity * .05;
-    hemi.intensity += ((fighting ? mood.hemiI * .41 : mood.hemiI) - hemi.intensity) * .08;
+    hemi.intensity += ((fighting ? wantHemi * .41 : wantHemi) - hemi.intensity) * .08;
     if (!hemiOnWater.userData.hold) hemiOnWater.intensity = hemi.intensity * .28;
     if (scene.fog) {
-      const want = fighting ? mood.fog * 1.7 : mood.fog;
+      const base = mood.fog * KL.fog;
+      const want = fighting ? base * 1.7 : base;
       scene.fog.density += (want - scene.fog.density) * .06;
     }
 
@@ -1127,6 +1218,45 @@ export function createRenderer(canvas, opts) {
     camera.updateProjectionMatrix();
   }
 
+  /* Swapping the grade over without reloading, so the two can be put side by
+     side. Most of it is re-applied when a land is entered, so the cheapest
+     honest way to do it is to forget which land we are in and let the next
+     frame walk through that again - the land itself is already built and
+     cached, so nothing is thrown away but the sky bake. */
+  function setLook(name) {
+    if (!LOOK[name] || name === look) return;
+    look = name; K = LOOK[look]; KL = K;
+    renderer.toneMapping = TONE[K.tone];
+    curId = null;              // the next frame resolves KL for the land again
+  }
+
+  /* Turning one knob of the grade at a time, from the console or from the shot
+     harness, without editing the table and reloading. Tuning a look is a dozen
+     small guesses and a picture after each one, and reloading between them
+     loses the land you were standing in. */
+  function grade(partial) {
+    if (!partial) return Object.assign({ look }, K);
+    Object.assign(K, partial);
+    renderer.toneMapping = TONE[K.tone] || renderer.toneMapping;
+    curId = null;                       // makes the next frame re-apply the rest
+    return Object.assign({ look }, K);
+  }
+
+  /* Put the light straight where the land is asking for it, instead of easing
+     towards it a frame at a time. The easing is deliberate in play - a land
+     fades up rather than snapping on - but anything taking a measured picture
+     needs the light it is going to end up with, and it needs it now. Software
+     rendering draws this scene at well under a frame a second, so waiting for
+     the fade to finish honestly takes minutes. Assumes nobody is fighting,
+     which is the only state a picture is taken in. */
+  function snapLight() {
+    moon.intensity = mood.keyI * KL.key;
+    if (!moonOnWater.userData.hold) moonOnWater.intensity = moon.intensity * .05;
+    hemi.intensity = mood.hemiI * KL.hemi;
+    if (!hemiOnWater.userData.hold) hemiOnWater.intensity = hemi.intensity * .28;
+    if (scene.fog) scene.fog.density = mood.fog * KL.fog;
+  }
+
   function setQuality(q) {
     if (!QUALITY[q] || q === quality) return;
     quality = q; Q = QUALITY[q];
@@ -1161,7 +1291,19 @@ export function createRenderer(canvas, opts) {
       land: curId, water: null, objects: 0, quality: quality,
       drawCalls: stat.draws, triangles: stat.tris, buildMs: stat.buildMs, cam: camWhy,
       geometries: i.memory.geometries, textures: i.memory.textures,
-      programs: i.programs ? i.programs.length : 0
+      programs: i.programs ? i.programs.length : 0,
+      /* The lights ease towards what the land asks for rather than snapping,
+         so these are where they have actually got to. Anything comparing two
+         pictures has to wait for them to arrive or it is measuring the fade. */
+      look: look,
+      frame: frames,
+      lit: {
+        moon: +moon.intensity.toFixed(4),
+        hemi: +hemi.intensity.toFixed(4),
+        rim: +rim.intensity.toFixed(4),
+        fog: scene.fog ? +scene.fog.density.toFixed(7) : 0,
+        exposure: +renderer.toneMappingExposure.toFixed(4)
+      }
     };
     scene.traverse(o => {
       out.objects++;
@@ -1183,5 +1325,6 @@ export function createRenderer(canvas, opts) {
     else if (what === 'hemiwater') { hemiOnWater.intensity = v; hemiOnWater.userData.hold = true; }
   }
 
-  return { render, resize, setQuality, project, groundHeight, debug, debugSet, get quality() { return quality; } };
+  return { render, resize, setQuality, setLook, grade, snapLight, project, groundHeight, debug, debugSet,
+           get quality() { return quality; }, get look() { return look; } };
 }
