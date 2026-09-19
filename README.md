@@ -214,6 +214,25 @@ a tone curve that keeps colour instead of washing it out at the top, much less
 of the ambient fill that softened every edge between lit and unlit, a stronger
 key and rim to put that edge back, and shadows at full strength.
 
+On top of that, `anime` shades every surface through a ramp of three flat steps
+- shadow, mid, light - instead of letting the light fall off smoothly. The ramp
+is a picture three pixels wide read with no smoothing between them, and that is
+the whole mechanism. Three steps is what a cel drawing uses; four and five
+measured the same and looked softer, so three was chosen for being crispest
+rather than for the numbers.
+
+Him, Luna, the creatures and the monsters are also smoothed rather than faceted
+under that grade. They are the only round things in the game, and so the only
+place a hard edge between lit and unlit can fall ACROSS a surface rather than
+along a join. Faceted, each flat already has one tone and the ramp has nothing
+to do. The trees stay faceted: they are merged into one shape each and lose
+their seams in the process, so they could not be smoothed even if it helped -
+and faceted foliage reads perfectly well in a drawing.
+
+The river keeps the old material, because it is the one surface that still needs
+reflections and a roughness to put the moon on the water, and a toon material
+has neither.
+
 Two of those numbers came out the opposite way round to what was expected, and
 both were settled by measuring rather than by arguing about it:
 

@@ -187,6 +187,59 @@ export function makeTerrain(L, curveOf) {
 }
 
 // The ground itself, as one piece of geometry with the colour baked into it.
+/* ---------------------------------------------------------------------------
+   HOW SURFACES ARE SHADED
+
+   Everything lit in the game is made through lit() rather than by naming a
+   material, so that the whole world can be shaded one way or the other from a
+   single switch.
+
+   `classic` is three's standard material: light falls off smoothly, the way it
+   does on a real surface.
+
+   `toon` is the same light put through a ramp of three or four flat steps, so a
+   surface is either lit or not lit with a hard edge between, which is what a
+   drawing does. The ramp is a tiny picture, one pixel per step, read with no
+   smoothing between them - that is the whole mechanism.
+
+   Toon materials have no roughness, no metalness and no reflections, so those
+   are dropped on the way through. The river is the one thing that still needs
+   them and so is built by hand rather than through here.
+
+   This is set once before any land is built, and read while the shapes are
+   being made. It is a module-level setting rather than an argument because
+   every one of the fourteen builders below would otherwise have to be handed
+   it and pass it on, for something that never changes while a land is alive.
+--------------------------------------------------------------------------- */
+let STYLE = { toon: false, ramp: null, smoothFolk: false };
+
+export function setStyle(s) { Object.assign(STYLE, s); }
+
+/* The ramp. Each number is how much of the light reaches a surface in that
+   band, from the side facing away to the side facing the moon. Nearest-neighbour
+   sampling is what keeps the steps hard - with smoothing it is just a gradient
+   again, which is the thing being got rid of. */
+export function toonRamp(steps) {
+  const a = new Uint8Array(steps.length);
+  for (let i = 0; i < steps.length; i++) a[i] = Math.round(Math.min(1, Math.max(0, steps[i])) * 255);
+  const t = new THREE.DataTexture(a, a.length, 1, THREE.RedFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
+}
+
+export function lit(p) {
+  if (!STYLE.toon) return new THREE.MeshStandardMaterial(p);
+  const q = {};
+  for (const k in p) {
+    if (k === 'roughness' || k === 'metalness' || k === 'envMapIntensity') continue;
+    q[k] = p[k];
+  }
+  if (STYLE.ramp) q.gradientMap = STYLE.ramp;
+  return new THREE.MeshToonMaterial(q);
+}
+
 export function groundMesh(L, terrain, quality) {
   const apron = 1600;                       // the land keeps going past its edges
   const w = L.w + apron * 2, h = L.h + apron * 2;
@@ -209,7 +262,7 @@ export function groundMesh(L, terrain, quality) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.computeVertexNormals();
 
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+  const mesh = new THREE.Mesh(geo, lit({
     vertexColors: true, roughness: 1, metalness: 0
   }));
   mesh.position.set(L.w / 2, 0, L.h / 2);
@@ -388,7 +441,7 @@ export function buildGate() {
   const g = new THREE.Group();
   const R = 112, T = 18;
 
-  const stone = new THREE.MeshStandardMaterial({ color: 0x8c99bd, roughness: .72, metalness: .08, flatShading: true });
+  const stone = lit({ color: 0x8c99bd, roughness: .72, metalness: .08, flatShading: true });
   const arch = new THREE.Mesh(new THREE.TorusGeometry(R, T, 8, 30, Math.PI), stone);
   arch.position.y = 12;
   arch.castShadow = true; arch.receiveShadow = true;
@@ -423,7 +476,7 @@ export function buildGate() {
 export function buildLandmark(type) {
   const g = new THREE.Group();
   const mat = (c, r) => {
-    const m = new THREE.MeshStandardMaterial({ color: c, roughness: r === undefined ? .9 : r, flatShading: true });
+    const m = lit({ color: c, roughness: r === undefined ? .9 : r, flatShading: true });
     m.onBeforeCompile = sh => {
       sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', `
         #ifdef USE_FOG
@@ -509,7 +562,17 @@ export function buildLandmark(type) {
    All of them are built the same way: a few solid shapes in a group, with the
    bits that need to move kept on userData so the renderer can find them again.
 --------------------------------------------------------------------------- */
-const solid = (c, opts) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .85, flatShading: true }, opts || {}));
+/* Him, Luna, the creatures and the monsters. These are the one part of the
+   game built out of round things - spheres and many-sided cylinders - and so
+   the one part where a hard edge between lit and unlit can actually fall ACROSS
+   a surface instead of along the join between two flats. Faceting them throws
+   that away: every facet is one flat tone already, so the ramp has nothing left
+   to do. So when the world is being drawn rather than photographed, they are
+   smoothed. The trees are left alone - they are merged into one shape each and
+   lose their seams on the way, so they cannot be smoothed even if it helped,
+   and faceted foliage reads perfectly well in a drawing anyway. */
+const solid = (c, opts) => lit(Object.assign(
+  { color: c, roughness: .85, flatShading: !STYLE.smoothFolk }, opts || {}));
 
 /* Things that are meant to glow are built BRIGHTER THAN WHITE. Nothing lit by
    the moon can ever reach these values, so the bloom pass picks out exactly the
@@ -648,7 +711,7 @@ export function buildMonster(boss) {
 
 export function buildCritter(kind) {
   const g = new THREE.Group();
-  const vmat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true });
+  const vmat = lit({ vertexColors: true, roughness: .85, flatShading: true });
   if (kind === 'bat') {
     g.add(new THREE.Mesh(paint(at(new THREE.SphereGeometry(4.5, 6, 5), 0, 13, 0), 0x4a3f5c), vmat));
     const wings = [];
@@ -683,7 +746,7 @@ export function buildShard() {
   const g = new THREE.Group();
   const core = new THREE.Mesh(
     new THREE.OctahedronGeometry(11),
-    new THREE.MeshStandardMaterial({
+    lit({
       color: 0xf5d76e, emissive: 0xf7df78, emissiveIntensity: 2.1,
       roughness: .25, metalness: .3, flatShading: true
     })
@@ -697,7 +760,7 @@ export function buildSeed() {
   const g = new THREE.Group();
   const core = new THREE.Mesh(
     new THREE.OctahedronGeometry(7, 0),
-    new THREE.MeshStandardMaterial({ color: 0xcdf7d6, emissive: 0x9ff5b6, emissiveIntensity: 2.0, roughness: .3 })
+    lit({ color: 0xcdf7d6, emissive: 0x9ff5b6, emissiveIntensity: 2.0, roughness: .3 })
   );
   core.scale.set(.7, 1.5, .7);
   g.add(core);

@@ -63,6 +63,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCENES = [
   { name: 'moonwood-pines', land: 'moonwood', x: 1350, y: 1500, a: -0.93,
     why: 'crowded pines - faceting, edge crawl, how shapes hold apart' },
+  { name: 'moonwood-close', land: 'moonwood', x: 1600, y: 1450, a: -1.30,
+    why: 'him and a monster up close - the one place a lit/unlit edge shows' },
   { name: 'moonwood-river', land: 'moonwood', x: 1900, y: 1400, a: 0,
     why: 'the river - water shading and the moon lying on it' },
   { name: 'sunfield-mill',  land: 'sunfield', x: 1700, y: 1900, a: -0.46,

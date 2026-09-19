@@ -110,11 +110,21 @@ aimKey(mood);
 const LOOK = {
   classic: {
     tone: 'aces',
+    toon: false,      // three's standard material: light falls off smoothly
     exposure: 1.00, fog: 1.00, key: 1.00, hemi: 1.00, rim: 1.00,
     env: 1.00, shadow: 0.52
   },
   anime: {
     tone: 'neutral',  // ACES throws colour away at the top; Neutral keeps it
+    toon: true,       // light through a ramp of flat steps instead of a falloff
+    /* The ramp: how much light reaches a surface in each band, from facing
+       away from the moon to facing it. Three is the count a cel drawing uses -
+       shadow, mid, light - and it measured the same as four and five, so it is
+       chosen for being the crispest rather than for the numbers. Five starts
+       to look like a gradient again and measured slightly worse. */
+    bands: [0.22, 0.62, 1.00],
+    smoothFolk: true, // round off him and the creatures, so the ramp has a curve
+                      // to cut across; the trees stay faceted either way
     exposure: 1.15,   // spreads the picture over more of the range before it clips
     fog: 1.15,        // MORE fog, not less - see the note below
     key: 2.00,        // a definite light source, twice what the photograph used
@@ -171,6 +181,18 @@ export function createRenderer(canvas, opts) {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(52, 1, 8, 7000);
+
+  /* How surfaces are shaded is decided before a single shape is made, because
+     the material is chosen as each shape is built. */
+  let ramp = null;
+  function applyStyle() {
+    if (K.toon && K.bands) {
+      if (ramp) ramp.dispose();
+      ramp = W.toonRamp(K.bands);
+    }
+    W.setStyle({ toon: !!K.toon, ramp, smoothFolk: !!K.smoothFolk });
+  }
+  applyStyle();
 
   /* -------------------------------------------------------------------------
      THE SKY
@@ -564,9 +586,9 @@ export function createRenderer(canvas, opts) {
     const water = terrain.hasWater ? buildWater(L) : null;
     if (water) root.add(water);
 
-    const leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, flatShading: true });
-    const windMat = windify(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, flatShading: true }));
-    const stoneMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .88, flatShading: true });
+    const leafMat = W.lit({ vertexColors: true, roughness: .92, flatShading: true });
+    const windMat = windify(W.lit({ vertexColors: true, roughness: .95, flatShading: true }));
+    const stoneMat = W.lit({ vertexColors: true, roughness: .88, flatShading: true });
 
     // Trees. Moonwood mixes pines with round ones; the Ruins only has dead ones.
     const all = L.trees.concat(L.scenery);
@@ -625,7 +647,7 @@ export function createRenderer(canvas, opts) {
       tufts.push({ x, y, s: (.95 + ((i * 11) % 70) / 100) * (MOOD[L.id] ? (MOOD[L.id].grass || 1) : 1) });
     }
     if (tufts.length) {
-      const mesh = instanced(W.tuftGeometry(0xffffff), windify(new THREE.MeshStandardMaterial({
+      const mesh = instanced(W.tuftGeometry(0xffffff), windify(W.lit({
         color: grassCol.multiplyScalar(1.75), vertexColors: true, roughness: 1, flatShading: true
       })), tufts.length, false);
       tufts.forEach((t, i) => {
@@ -1227,7 +1249,30 @@ export function createRenderer(canvas, opts) {
     if (!LOOK[name] || name === look) return;
     look = name; K = LOOK[look]; KL = K;
     renderer.toneMapping = TONE[K.tone];
-    curId = null;              // the next frame resolves KL for the land again
+
+    /* Which material a surface gets is decided as it is built, so a land built
+       under one grade cannot be shown under the other. Throw them away and let
+       them be built again - about a tenth of a second each, and only when
+       somebody switches by hand. */
+    applyStyle();
+    for (const id in builtLands) {
+      scrapLand(builtLands[id]);
+      delete builtLands[id];
+    }
+    curLand = null;
+    curId = null;              // the next frame resolves KL and rebuilds
+  }
+
+  /* Give a land's geometry and materials back to the graphics card. Without
+     this, switching grade a few times would leak a forest each time. */
+  function scrapLand(land) {
+    scene.remove(land.root);
+    land.root.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      const m = o.material;
+      if (!m) return;
+      for (const one of Array.isArray(m) ? m : [m]) one.dispose();
+    });
   }
 
   /* Turning one knob of the grade at a time, from the console or from the shot
@@ -1236,8 +1281,16 @@ export function createRenderer(canvas, opts) {
      loses the land you were standing in. */
   function grade(partial) {
     if (!partial) return Object.assign({ look }, K);
+    const restyle = 'toon' in partial || 'bands' in partial || 'smoothFolk' in partial;
     Object.assign(K, partial);
     renderer.toneMapping = TONE[K.tone] || renderer.toneMapping;
+    if (restyle) {
+      // The shading model is baked into the materials as each land is built,
+      // so changing it means building them again.
+      applyStyle();
+      for (const id in builtLands) { scrapLand(builtLands[id]); delete builtLands[id]; }
+      curLand = null;
+    }
     curId = null;                       // makes the next frame re-apply the rest
     return Object.assign({ look }, K);
   }
