@@ -260,15 +260,35 @@ both were settled by measuring rather than by arguing about it:
   because the fill was lighting the lit side too. It only buys anything if the
   key comes up to meet it. The gap between them is the point, not the cut.
 
-The Ruins is the exception that proves the fog rule, and has its own lighter fog
-in a `per` block: it is already flattened by four sheets of drifting mist, so it
-has no distinct near and far for fog to tell apart, and more of it only
-compressed what separation was left.
+Each land then gets its own say in a `per` block, because two of them argued
+with the numbers above:
+
+- **The Ruins** is the exception that proves the fog rule. It is already
+  flattened by four sheets of drifting mist, so it has no distinct near and far
+  for fog to tell apart, and more of it only compressed what separation was
+  left. It also had a worse problem: it was not far enough from Moonwood. Two
+  dark blue-green lands sat three times closer to each other, in colour, than
+  either did to Sunfield - which is the opposite of the point of having three.
+  MOOD calls this land "high, colourless and smothered", and the fix was in the
+  word colourless: most of the colour is wrung out of its light, so it separates
+  from Moonwood by being grey where Moonwood is green rather than by being
+  darker. That is the one place the drawing is *less* colourful than the
+  photograph, on purpose.
+- **Sunfield** was coming out brighter than the photograph ever was, which
+  looked wrong rather than different, and is pulled back onto classic's own
+  brightness while keeping the colour.
 
 There is a straight trade between the two things the grade is for - every
 further step of contrast costs saturation, because brightness pushes colour up
 into the part of the curve where it washes out. The numbers sit at the far end
 of where both are still better than the photograph was.
+
+One number went the other way in the end. The far-side rim light was turned UP
+early on, reasoning that a drawing leans on a rim light to hold shapes apart.
+Once the ink line arrived that stopped being true - the line does that job now,
+and the rim was left washing light over everything and costing contrast. It sits
+a little above the photograph's, for the job it was always doing (stopping a far
+tree merging into the tree behind it) and no higher.
 
 ### The three lands look different on purpose
 

@@ -112,7 +112,7 @@ const LOOK = {
     tone: 'aces',
     toon: false,      // three's standard material: light falls off smoothly
     exposure: 1.00, fog: 1.00, key: 1.00, hemi: 1.00, rim: 1.00,
-    env: 1.00, shadow: 0.52
+    env: 1.00, shadow: 0.52, sat: 1.00
   },
   anime: {
     tone: 'neutral',  // ACES throws colour away at the top; Neutral keeps it
@@ -136,7 +136,15 @@ const LOOK = {
     fog: 1.15,        // MORE fog, not less - see the note below
     key: 2.00,        // a definite light source, twice what the photograph used
     hemi: 0.42,       // and much less fill: the gap between the two is the edge
-    rim: 1.70,        // a drawing holds shapes apart with a line, not a gradient
+    /* The far-side light. Stage 2 put this UP, on the reasoning that a drawing
+       leans on a rim light to hold shapes apart. Once the ink line arrived that
+       stopped being true - the line does that job now, and the rim was left
+       washing light over everything and costing contrast. Measured across the
+       whole range it barely matters any more: no rim at all reads highest, and
+       every setting from 1.0 up is within half a point. It is kept at 1.0, a
+       little above the photograph's, for the job it was always doing - stopping
+       a far tree merging into the tree behind it - and no higher. */
+    rim: 1.00,
     env: 0.35,        // the sky fill flattens too, and stage 3 drops it entirely
     shadow: 1.00,     // shadows at full strength instead of half
 
@@ -148,11 +156,38 @@ const LOOK = {
        contrast, not more. It is the exception that shows what the fog rule
        above actually depends on. Given its own, lighter fog it comes out
        ahead on both counts like the other two. */
+    sat: 1.00,        // per-land, below: how much colour each land's light keeps
     per: {
-      ruins: { fog: 0.50, exposure: 1.18, key: 2.10, hemi: 0.40 }
+      /* Sunfield was coming out brighter than the photograph ever was - the
+         one thing that looked wrong rather than different. Pulled back onto
+         classic's own brightness and contrast, keeping the colour. */
+      sunfield: { exposure: 0.80, key: 2.25, hemi: 0.34 },
+
+      /* The Ruins had a worse problem than being flat: it was not far enough
+         from Moonwood. Two dark blue-green lands measured three times closer
+         to each other than either was to Sunfield, which is the opposite of
+         the point of having three. MOOD calls this land "high, colourless and
+         smothered", so the fix is in the word colourless - most of the colour
+         is wrung out of its light, and it separates from Moonwood by being
+         grey where Moonwood is green rather than by being darker.
+         Fog sits at 0.68: enough back to keep the distance hazing out, which
+         is the smothered half of the description, without flattening it. */
+      ruins: { fog: 0.68, exposure: 1.34, key: 2.35, hemi: 0.32, env: 0.28, sat: 0.40 }
     }
   }
 };
+
+/* Wring some colour out of a light, or wring more into it, without touching
+   what MOOD says the land is. MOOD is the land's own identity and is shared
+   with the classic grade; this is the drawing's opinion of it, and only the
+   drawing's. Leaves lightness and hue alone - a grey moon is still the same
+   moon, just greyer. */
+const _hsl = { h: 0, s: 0, l: 0 };
+function tint(col, mul) {
+  if (mul === undefined || mul === 1) return;
+  col.getHSL(_hsl);
+  col.setHSL(_hsl.h, Math.min(1, Math.max(0, _hsl.s * mul)), _hsl.l);
+}
 
 const TONE = {
   aces: THREE.ACESFilmicToneMapping,
@@ -996,10 +1031,11 @@ export function createRenderer(canvas, opts) {
       skyUniforms.moonDir.value.copy(KEY);
       skyUniforms.moonCol.value.setRGB(mood.moonCol[0], mood.moonCol[1], mood.moonCol[2]);
       skyUniforms.moonGain.value = mood.moonGain;
-      moon.color.setHex(mood.key);
-      hemi.color.setHex(mood.hemiSky); hemi.groundColor.setHex(mood.hemiGnd);
+      moon.color.setHex(mood.key);            tint(moon.color, KL.sat);
+      hemi.color.setHex(mood.hemiSky);        tint(hemi.color, KL.sat);
+      hemi.groundColor.setHex(mood.hemiGnd);  tint(hemi.groundColor, KL.sat);
       hemiOnWater.color.setHex(mood.hemiSky); hemiOnWater.groundColor.setHex(mood.hemiGnd);
-      rim.color.setHex(mood.rim); rim.intensity = mood.rimI * KL.rim;
+      rim.color.setHex(mood.rim); tint(rim.color, KL.sat); rim.intensity = mood.rimI * KL.rim;
       rim.position.copy(KEY).multiplyScalar(-1).setY(0.45).normalize().multiplyScalar(1000);
       moonOnWater.position.copy(KEY).multiplyScalar(1000);
       renderer.toneMappingExposure = mood.exposure * KL.exposure;
