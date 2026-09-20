@@ -19,7 +19,7 @@
    turn buttons and the compass all come out backwards.
 --------------------------------------------------------------------------- */
 import * as THREE from './vendor/three.module.min.js';
-import { mergeGeometries } from './vendor/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from './vendor/utils/BufferGeometryUtils.js';
 
 export function v3(x, y, z) { return new THREE.Vector3(x, z || 0, y); }
 export function setPos(obj, x, y, z) { obj.position.set(x, z || 0, y); }
@@ -187,6 +187,147 @@ export function makeTerrain(L, curveOf) {
 }
 
 // The ground itself, as one piece of geometry with the colour baked into it.
+/* ---------------------------------------------------------------------------
+   HOW SURFACES ARE SHADED
+
+   Everything lit in the game is made through lit(), so the whole world is
+   shaded the one way from the one place.
+
+   Light is put through a ramp of a few flat steps rather than falling off
+   smoothly, so a surface is either lit or not lit with a hard edge between,
+   which is what a drawing does. The ramp is a picture one pixel per step, read
+   with no smoothing between them - that is the whole mechanism.
+
+   Toon materials have no roughness, no metalness and no reflections, so those
+   are dropped on the way through rather than being left to sit unused. The
+   river is the one surface that still needs them - it is what lies the moon on
+   the water - and so is built by hand rather than through here.
+
+   This is set once before any land is built, and read while the shapes are
+   being made. It is a module-level setting rather than an argument because
+   every one of the fourteen builders below would otherwise have to be handed it
+   and pass it on, for something that never changes while a land is alive.
+--------------------------------------------------------------------------- */
+let STYLE = { ramp: null, ink: null, inkColour: 0, inkWidth: 0 };
+
+/* ---------------------------------------------------------------------------
+   THE INK LINE
+
+   A drawing holds a shape apart from what is behind it with a line round the
+   outside. This does it the old way: build the shape a second time a little
+   larger, turn it inside out, and paint it dark. The larger copy is hidden
+   behind the real one everywhere except round the edge, where it shows as a
+   line of even thickness.
+
+   Two things make or break it.
+
+   The copy is grown by pushing every corner out along the way its surface
+   faces. That only closes up if the corners are SHARED between the faces that
+   meet there - on a box built as six separate flats, each flat marches off in
+   its own direction and the shape comes apart at the seams. So the copy is
+   welded and its normals recomputed first, whatever the original was doing.
+   It is a copy, so the original keeps its own shading either way.
+
+   And the line is hung on the shape it belongs to rather than beside it, so an
+   arm that swings takes its outline with it and nothing has to be kept in step.
+--------------------------------------------------------------------------- */
+function inkMaterial(colour, width) {
+  const m = new THREE.MeshBasicMaterial({
+    color: colour,
+    side: THREE.BackSide,   // only the far side of the bigger copy is drawn
+    fog: true               // a far-off figure should not keep a crisp black line
+  });
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uInk = { value: width };
+    sh.vertexShader = 'uniform float uInk;\n' + sh.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+       transformed += normalize(normal) * uInk;`
+    );
+  };
+  m.customProgramCacheKey = () => 'ink';
+  return m;
+}
+
+/* Give one shape its line. The line becomes a child of the shape, so it
+   inherits every move the shape makes for nothing. */
+const _inkCache = new Map();
+const _size = new THREE.Vector3();
+
+/* A line thicker than the thing it is drawn round does not outline it, it
+   swallows it. A bat's wing is 1.2 across and the line is 1.8, so the wing
+   would come out as a solid dark slab rather than a wing with an edge. So a
+   part thinner than the line gets a finer one, in proportion. Materials are
+   shared between parts that land on the same width, so this costs a handful
+   of them rather than one per part. */
+function inkFor(mesh, mat, width) {
+  const geo = mesh.geometry;
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  geo.boundingBox.getSize(_size);
+  const thinnest = Math.min(_size.x, _size.y, _size.z) * Math.min(
+    Math.abs(mesh.scale.x), Math.abs(mesh.scale.y), Math.abs(mesh.scale.z));
+  const want = Math.min(width, thinnest * 0.28);
+  if (want >= width) return mat;
+  const key = want.toFixed(2);
+  if (!_inkCache.has(key)) _inkCache.set(key, inkMaterial(STYLE.inkColour, want));
+  return _inkCache.get(key);
+}
+
+function inkOne(mesh, mat) {
+  const shell = mergeVertices(mesh.geometry.clone());
+  shell.computeVertexNormals();
+  const line = new THREE.Mesh(shell, inkFor(mesh, mat, STYLE.inkWidth));
+  line.castShadow = false;       // it is not a thing, it is a line round a thing
+  line.receiveShadow = false;
+  line.userData.isInk = true;
+  mesh.add(line);
+}
+
+/* Give everything in a group its line. Anything built to glow is left alone:
+   a shard or an eye is a light, and a light does not have an edge drawn on it. */
+export function inkGroup(g) {
+  if (!STYLE.ink) return g;
+  const meshes = [];
+  g.traverse(o => {
+    if (o.isMesh && !o.userData.isInk && !(o.material && o.material.isMeshBasicMaterial)) meshes.push(o);
+  });
+  for (const m of meshes) inkOne(m, STYLE.ink);
+  return g;
+}
+
+export function setStyle(s) {
+  Object.assign(STYLE, s);
+  if (STYLE.ink) STYLE.ink.dispose();
+  for (const m of _inkCache.values()) m.dispose();
+  _inkCache.clear();
+  STYLE.ink = (STYLE.inkColour !== undefined && STYLE.inkWidth > 0)
+    ? inkMaterial(STYLE.inkColour, STYLE.inkWidth) : null;
+}
+
+/* The ramp. Each number is how much of the light reaches a surface in that
+   band, from the side facing away to the side facing the moon. Nearest-neighbour
+   sampling is what keeps the steps hard - with smoothing it is just a gradient
+   again, which is the thing being got rid of. */
+export function toonRamp(steps) {
+  const a = new Uint8Array(steps.length);
+  for (let i = 0; i < steps.length; i++) a[i] = Math.round(Math.min(1, Math.max(0, steps[i])) * 255);
+  const t = new THREE.DataTexture(a, a.length, 1, THREE.RedFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
+}
+
+export function lit(p) {
+  const q = {};
+  for (const k in p) {
+    if (k === 'roughness' || k === 'metalness' || k === 'envMapIntensity') continue;
+    q[k] = p[k];
+  }
+  if (STYLE.ramp) q.gradientMap = STYLE.ramp;
+  return new THREE.MeshToonMaterial(q);
+}
+
 export function groundMesh(L, terrain, quality) {
   const apron = 1600;                       // the land keeps going past its edges
   const w = L.w + apron * 2, h = L.h + apron * 2;
@@ -209,7 +350,7 @@ export function groundMesh(L, terrain, quality) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.computeVertexNormals();
 
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+  const mesh = new THREE.Mesh(geo, lit({
     vertexColors: true, roughness: 1, metalness: 0
   }));
   mesh.position.set(L.w / 2, 0, L.h / 2);
@@ -388,7 +529,7 @@ export function buildGate() {
   const g = new THREE.Group();
   const R = 112, T = 18;
 
-  const stone = new THREE.MeshStandardMaterial({ color: 0x8c99bd, roughness: .72, metalness: .08, flatShading: true });
+  const stone = lit({ color: 0x8c99bd, roughness: .72, metalness: .08, flatShading: true });
   const arch = new THREE.Mesh(new THREE.TorusGeometry(R, T, 8, 30, Math.PI), stone);
   arch.position.y = 12;
   arch.castShadow = true; arch.receiveShadow = true;
@@ -423,7 +564,7 @@ export function buildGate() {
 export function buildLandmark(type) {
   const g = new THREE.Group();
   const mat = (c, r) => {
-    const m = new THREE.MeshStandardMaterial({ color: c, roughness: r === undefined ? .9 : r, flatShading: true });
+    const m = lit({ color: c, roughness: r === undefined ? .9 : r, flatShading: true });
     m.onBeforeCompile = sh => {
       sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', `
         #ifdef USE_FOG
@@ -509,7 +650,17 @@ export function buildLandmark(type) {
    All of them are built the same way: a few solid shapes in a group, with the
    bits that need to move kept on userData so the renderer can find them again.
 --------------------------------------------------------------------------- */
-const solid = (c, opts) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .85, flatShading: true }, opts || {}));
+/* Him, Luna, the creatures and the monsters. These are the one part of the
+   game built out of round things - spheres and many-sided cylinders - and so
+   the one part where a hard edge between lit and unlit can actually fall ACROSS
+   a surface instead of along the join between two flats. So they are smooth,
+   and note the absence of flatShading below - faceting them would throw that
+   away, since every facet is one flat tone already and the ramp would have
+   nothing left to do. The trees keep theirs: they are merged into one shape
+   each and lose their seams on the way, so they could not be smoothed even if
+   it helped, and faceted foliage reads perfectly well in a drawing. */
+const solid = (c, opts) => lit(Object.assign(
+  { color: c, roughness: .85 }, opts || {}));
 
 /* Things that are meant to glow are built BRIGHTER THAN WHITE. Nothing lit by
    the moon can ever reach these values, so the bloom pass picks out exactly the
@@ -560,7 +711,7 @@ export function buildPlayer() {
   face.position.set(7, 56, 0); g.add(face);
 
   g.userData = { legs, arms, cloak };
-  return g;
+  return inkGroup(g);
 }
 
 export function buildLuna() {
@@ -576,7 +727,7 @@ export function buildLuna() {
   const light = new THREE.PointLight(0xf5d76e, 0, 300, 2);
   light.position.set(0, 54, 11); g.add(light);
   g.userData = { orb, light };
-  return g;
+  return inkGroup(g);
 }
 
 const CREATURE_COLOUR = {
@@ -606,7 +757,7 @@ export function buildCreature(kind) {
   spark.position.y = 52;
   g.add(spark);
   g.userData = { spark };
-  return g;
+  return inkGroup(g);
 }
 
 export function buildMonster(boss) {
@@ -643,12 +794,12 @@ export function buildMonster(boss) {
   }
   g.userData.eyes = eyes;
   if (boss) g.scale.setScalar(1.7);
-  return g;
+  return inkGroup(g);
 }
 
 export function buildCritter(kind) {
   const g = new THREE.Group();
-  const vmat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true });
+  const vmat = lit({ vertexColors: true, roughness: .85, flatShading: true });
   if (kind === 'bat') {
     g.add(new THREE.Mesh(paint(at(new THREE.SphereGeometry(4.5, 6, 5), 0, 13, 0), 0x4a3f5c), vmat));
     const wings = [];
@@ -658,7 +809,7 @@ export function buildCritter(kind) {
       g.add(w); wings.push(w);
     }
     g.userData = { wings };
-    return g;
+    return inkGroup(g);
   }
   const col = kind === 'frog' ? 0x5f9c52 : 0xb5a48c;
   const body = new THREE.SphereGeometry(7, 7, 6);
@@ -669,7 +820,7 @@ export function buildCritter(kind) {
   }
   parts.push(paint(at(new THREE.SphereGeometry(1.3, 5, 4), 7.5, 12, 2), 0x1d2430));
   g.add(new THREE.Mesh(mergeGeometries(parts), vmat));
-  return g;
+  return inkGroup(g);
 }
 
 /* ---------------------------------------------------------------------------
@@ -683,7 +834,7 @@ export function buildShard() {
   const g = new THREE.Group();
   const core = new THREE.Mesh(
     new THREE.OctahedronGeometry(11),
-    new THREE.MeshStandardMaterial({
+    lit({
       color: 0xf5d76e, emissive: 0xf7df78, emissiveIntensity: 2.1,
       roughness: .25, metalness: .3, flatShading: true
     })
@@ -697,7 +848,7 @@ export function buildSeed() {
   const g = new THREE.Group();
   const core = new THREE.Mesh(
     new THREE.OctahedronGeometry(7, 0),
-    new THREE.MeshStandardMaterial({ color: 0xcdf7d6, emissive: 0x9ff5b6, emissiveIntensity: 2.0, roughness: .3 })
+    lit({ color: 0xcdf7d6, emissive: 0x9ff5b6, emissiveIntensity: 2.0, roughness: .3 })
   );
   core.scale.set(.7, 1.5, .7);
   g.add(core);

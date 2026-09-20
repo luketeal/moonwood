@@ -103,6 +103,53 @@ into a stone you cannot see" feel exactly the same. In a fight he takes a step b
 swings round to the side, so you can see the two of them squaring up - and they
 turn to face each other, as do creatures when he comes near them.
 
+## Comparing one look against another
+
+Changing the way the game looks is hard to judge by eye. It is a dark game, and
+a change that helps and a change that hurts both just look like "Moonwood, at
+night" an hour later. So there is a harness that takes the same four pictures
+every time:
+
+```sh
+npm i -D playwright && npx playwright install chromium   # once
+node tools/shots.mjs --tag before
+#   ... change something ...
+node tools/shots.mjs --tag after
+```
+
+That leaves `shots/before-*.png` and `shots/after-*.png`: the same four places -
+the pines, the river, the open field and the broken tower - stood in from the
+same spot, lit the same way, and frozen at the same instant, so the only thing
+that differs between the two sets is what you changed. `--list` names the four
+and says what each one is for.
+
+Everything that moves by itself is worked out from the clock, so the harness
+stops the clock before it takes the picture: the wind, the water, the fireflies
+and the campfires all land in the same place in both runs. The dials and buttons
+are hidden unless you ask for them with `--hud`, and it refuses to photograph a
+fight, because a fight dims the moon and swings the camera and the picture would
+be of the fight rather than of the place.
+
+The light and the camera are put where they belong rather than waited for. Both
+ease towards their target a frame at a time, which is right in play and useless
+here: the light wants about a hundred and thirty frames to arrive and headless
+Chromium draws this scene in software at well under a frame a second, and the
+camera is worse than slow - left alone it orbits him for ever, so there is no
+resting place to wait for at all. Three things are snapped, in the same breath
+as stopping the clock: the light, the camera, and the camera's climb over
+whatever is standing behind him, which eases as well and otherwise framed a
+scene with a tree at his back differently in every single run. Together they
+took the difference between two runs of the same build from a quarter of the
+picture down to about one pixel in seven hundred.
+
+**It is for how the game looks, not for how fast it runs.** Headless Chromium
+draws with software rather than with a graphics chip, and a frame time measured
+from it means nothing. Speed still has to be checked on a real phone.
+
+`?gfx=high`, `?gfx=med` or `?gfx=low` on the end of the address picks the
+quality by hand, and asking for one by name also pins it - the game will not
+quietly drop a step underneath you, which is what makes two runs comparable.
+
 ## Publishing it
 
 The game is published by `.github/workflows/deploy.yml`, and there is one live
@@ -148,6 +195,90 @@ to build. What makes it look like anything is the lighting, not the models:
   surface the moon happens to be catching never does, however bright it looks
 - **The sky reflected**, baked once per land, which is what puts a moon on the
   river and a little cold light on everything else
+- **Smoothed edges**, four samples' worth on high and two on med. The bloom pass
+  draws the whole scene into a picture of its own before it gets to the screen,
+  so the smoothing has to be asked for on *that* picture: ask the canvas alone
+  and every edge in the game stays a staircase. Low skips the passes and draws
+  straight to the canvas, which smooths itself
+
+### How it is graded
+
+MOOD, below, says what each land is like. There is a second table next to it,
+GRADE, which says how the whole game is developed afterwards: not a photograph
+of a wood at night but a drawing of one. A tone curve that keeps colour instead
+of washing it out at the top; much less of the ambient fill that softened every
+edge between lit and unlit; a stronger key to meet it; shadows at full strength.
+
+Every surface is shaded through a ramp of three flat steps - shadow, mid, light
+- instead of letting the light fall off smoothly. The ramp is a picture three
+pixels wide read with no smoothing between them, and that is the whole
+mechanism. Three steps is what a cel drawing uses; four and five measured the
+same and looked softer.
+
+Him, Luna, the creatures and the monsters are smooth rather than faceted. They
+are the only round things in the game, and so the only place a hard edge between
+lit and unlit can fall ACROSS a surface rather than along a join. The trees stay
+faceted: they are merged into one shape each and lose their seams in the
+process, so they could not be smoothed even if it helped, and faceted foliage
+reads perfectly well in a drawing.
+
+They also get a line drawn round them, the old way: each shape is built a second
+time a little larger, turned inside out and painted dark, so the bigger copy is
+hidden behind the real one everywhere except round the edge. The line is a dark
+blue rather than black, because a black line in a blue night reads as a hole cut
+in the picture, and it fades with distance like everything else. Only the
+figures get one - a line round all six hundred pines would be a different and
+much more expensive job.
+
+A part thinner than the line gets a finer one, in proportion. A bat's wing is
+1.2 across and the line is 1.8, so without that the wing would come out as a
+solid dark slab rather than a wing with an edge round it.
+
+That line costs a second draw for every part of every figure, which is about a
+quarter more draw calls across a land for almost no extra triangles. `?gfx=low`
+therefore goes without it: the lowest tier is where something has already gone
+wrong, and it is the one place that cannot spare the draws. Everything else
+about the grade stays.
+
+The river keeps the old material, because it is the one surface that still needs
+reflections and a roughness to put the moon on the water, and a toon material
+has neither.
+
+Three of the numbers in GRADE came out the opposite way round to what was
+expected, and all three were settled by measuring rather than by arguing:
+
+- **Fog was turned up, not down.** Haze is supposed to flatten a picture. Here
+  it does the reverse, because the fog is the colour of the low sky, which is
+  *lighter* than the wood in front of it - so the fog is what makes a far tree
+  read differently from a near one. Taking it away measured as less separation.
+- **Cutting the ambient fill on its own does nothing.** It hardens the edge
+  between lit and unlit but darkens everything with it, because the fill was
+  lighting the lit side too. It only buys anything if the key comes up to meet
+  it. The gap between them is the point, not the cut.
+- **The rim light wanted turning down.** A drawing does lean on a rim light to
+  hold shapes apart - but the ink line does that job here, and the rim was left
+  washing light over everything and costing contrast.
+
+Each land then gets its own say in a `per` block, because two of them argued
+with the numbers above:
+
+- **The Ruins** is the exception that proves the fog rule: it is already
+  flattened by four sheets of drifting mist, so it has no distinct near and far
+  for fog to tell apart. It also had a worse problem - it was not far enough
+  from Moonwood. Two dark blue-green lands sat three times closer to each other,
+  in colour, than either did to Sunfield. MOOD calls this land "high, colourless
+  and smothered", and the fix was in the word colourless: most of the colour is
+  wrung out of its light, so it separates from Moonwood by being grey where
+  Moonwood is green rather than by being darker. It is the one land drawn with
+  *less* colour than the photograph had, on purpose.
+- **Sunfield** was coming out brighter than the photograph ever was, which
+  looked wrong rather than different, and is pulled back onto the old brightness
+  while keeping the colour.
+
+There is a straight trade between the two things the grade is for - every
+further step of contrast costs saturation, because brightness pushes colour up
+into the part of the curve where it washes out. The numbers sit at the far end
+of where both are still better than the photograph was.
 
 ### The three lands look different on purpose
 
@@ -177,7 +308,9 @@ the whole feel of it more than any other single number.
 
 The game watches its own frame rate and quietly steps down if it cannot keep
 up - shadows go first, then the glow. You can also force a setting by adding
-`?gfx=low`, `?gfx=med` or `?gfx=high` to the address.
+`?gfx=low`, `?gfx=med` or `?gfx=high` to the address. Asking for one by name
+pins it: somebody who has typed `?gfx=high` means it, and the game will not
+step down underneath them.
 
 ## The files
 
@@ -186,6 +319,8 @@ up - shadows go first, then the glow. You can also force a setting by adding
 - `world3d.js` — the shapes everything is built from, and the lie of the land
 - `vendor/` — three.js and the four post-processing passes, kept in the repo so
   the game never depends on anyone else's server staying up
+- `tools/shots.mjs` — takes the same four pictures of the game every time, for
+  telling whether a change to the way it looks was an improvement
 - `.nojekyll` — tells GitHub to publish the files exactly as written
 - `.github/workflows/deploy.yml` — publishes the site, and lets you put any
   branch live for testing

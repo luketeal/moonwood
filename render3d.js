@@ -63,27 +63,144 @@ function aimKey(m) {
 }
 aimKey(mood);
 
+/* ---------------------------------------------------------------------------
+   THE GRADE
+
+   MOOD above says what each land is like. This says how the whole game is
+   developed afterwards: not a photograph of a wood at night, but a drawing of
+   one. A drawing separates things by giving them flat areas of colour with a
+   hard edge between lit and unlit, and it keeps colour saturated instead of
+   letting bright things wash out to white.
+
+   Every number here is a multiplier on what MOOD already says, so the three
+   lands keep their own character - Sunfield is still warm and open, the Ruins
+   are still smothered - they are just drawn rather than photographed.
+
+   Three of these came out the opposite way round to what was expected, and all
+   three were settled by measuring rather than by arguing about it:
+
+   FOG IS TURNED UP, not down. Haze is supposed to flatten a picture. Here it
+   does the reverse, because the fog is the colour of the low sky, which is
+   LIGHTER than the wood in front of it - so the fog is what makes a far tree
+   read differently from a near one. Taking it away pulled the distances
+   together and measured as less separation, not more.
+
+   CUTTING THE FILL ON ITS OWN DOES NOTHING. Less ambient light does harden the
+   edge between lit and unlit, but by itself it just darkens everything, because
+   the fill was lighting the lit side too. It only buys anything if the key
+   comes up to meet it - hence key at 2.0 against hemi at 0.42. The gap between
+   them is the point, not the cut.
+
+   THE RIM LIGHT WANTED TURNING DOWN, not up. A drawing does lean on a rim light
+   to hold shapes apart - but the ink line does that job here, and the rim was
+   left washing light over everything and costing contrast. It sits a little
+   above where the photograph had it, for the job it was always doing (stopping
+   a far tree merging into the tree behind it) and no higher.
+
+   There is also a straight trade between the two things this is for: every
+   further step of contrast costs saturation, because brightness pushes colour
+   up into the part of the curve where it washes out. These numbers sit at the
+   far end of where both are still better than the photograph was.
+--------------------------------------------------------------------------- */
+const GRADE = {
+  exposure: 1.15,   // spreads the picture over more of the range before it clips
+  fog: 1.15,        // MORE fog, not less - see above
+  key: 2.00,        // a definite light source, twice what the photograph used
+  hemi: 0.42,       // and much less fill: the gap between the two is the edge
+  rim: 1.00,        // the ink line holds shapes apart now, so this need not
+  env: 0.35,        // the sky fill flattens, and toon materials ignore it anyway
+  shadow: 1.00,     // shadows at full strength instead of half
+  sat: 1.00,        // per-land, below: how much colour each land's light keeps
+
+  /* The ramp every surface is shaded through: how much light reaches it in
+     each band, from facing away from the moon to facing it. Three is the count
+     a cel drawing uses - shadow, mid, light - and it measured the same as four
+     and five, so it is chosen for being the crispest rather than for the
+     numbers. Five starts to look like a gradient again. */
+  bands: [0.22, 0.62, 1.00],
+
+  /* The line round him and the creatures. Not black: a black line in a blue
+     night reads as a hole cut in the picture. This is the dark end of the same
+     blue the land is lit with, so it sits in the scene rather than on top of
+     it. Width is in world units, so a figure far off gets a finer line than one
+     up close, which is what a drawing would do anyway. */
+  inkColour: 0x0d1a2b,
+  inkWidth: 1.8,
+
+  per: {
+    /* Sunfield came out brighter than the photograph ever was - the one thing
+       that looked wrong rather than different. Pulled back onto the old
+       brightness and contrast, keeping the colour. */
+    sunfield: { exposure: 0.80, key: 2.25, hemi: 0.34 },
+
+    /* The Ruins had a worse problem than being flat: it was not far enough from
+       Moonwood. Two dark blue-green lands measured three times closer to each
+       other, in colour, than either was to Sunfield - which is the opposite of
+       the point of having three. MOOD calls this land "high, colourless and
+       smothered", so the fix is in the word colourless: most of the colour is
+       wrung out of its light, and it separates from Moonwood by being grey
+       where Moonwood is green rather than by being darker. Its fog sits at
+       0.68 - enough to keep the distance hazing out, which is the smothered
+       half of the description, without flattening it. It is the one land drawn
+       with LESS colour than the photograph had, on purpose. */
+    ruins: { fog: 0.68, exposure: 1.34, key: 2.35, hemi: 0.32, env: 0.28, sat: 0.40 }
+  }
+};
+
+/* Wring some colour out of a light, or more into it, without touching what MOOD
+   says the land is. MOOD is the land's own identity; this is only how it is
+   drawn. Leaves lightness and hue alone - a grey moon is the same moon, greyer. */
+const _hsl = { h: 0, s: 0, l: 0 };
+function tint(col, mul) {
+  if (mul === undefined || mul === 1) return;
+  col.getHSL(_hsl);
+  col.setHSL(_hsl.h, Math.min(1, Math.max(0, _hsl.s * mul)), _hsl.l);
+}
+
 const QUALITY = {
-  high: { shadow: 1536, bloom: true, dpr: 2, undergrowth: 4200, shadowDist: 660 },
-  med: { shadow: 1024, bloom: true, dpr: 1.75, undergrowth: 1800, shadowDist: 520 },
-  low: { shadow: 0, bloom: false, dpr: 1.3, undergrowth: 900, shadowDist: 0 }
+  high: { shadow: 1536, bloom: true, dpr: 2, undergrowth: 4200, shadowDist: 660, msaa: 4 },
+  med: { shadow: 1024, bloom: true, dpr: 1.75, undergrowth: 1800, shadowDist: 520, msaa: 2 },
+  // low does not use the picture passes at all, so it draws straight to the
+  // canvas and gets its smoothing from `antialias: true` below.
+  low: { shadow: 0, bloom: false, dpr: 1.3, undergrowth: 900, shadowDist: 0, msaa: 0 }
 };
 
 export function createRenderer(canvas, opts) {
   const curveOf = opts.curveOf;
   let quality = opts.quality || 'high';
   let Q = QUALITY[quality];
+  const K = GRADE;   // the grade as written
+  let KL = K;        // ...and as it applies in the land he is standing in
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setClearColor(0x06080f, 1);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.3;
+  renderer.toneMapping = THREE.NeutralToneMapping;   // ACES throws colour away at the top
+  renderer.toneMappingExposure = 1.3 * K.exposure;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.info.autoReset = false;   // counted by hand, so the post passes are included
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(52, 1, 8, 7000);
+
+  /* How surfaces are shaded is decided before a single shape is made, because
+     the material is chosen as each shape is built. */
+  let ramp = null;
+
+  /* The ink line costs a second draw for every part of every figure - about a
+     quarter more draw calls across a land, for almost no extra triangles. That
+     is affordable on anything that can manage the glow, and it is exactly what
+     a phone already struggling cannot spare. So the lowest tier, which is where
+     something has already gone wrong, goes without it. Nothing else about the
+     grade changes: it is still drawn in flat steps, just without the line. */
+  function inkWanted() { return (K.inkWidth || 0) > 0 && quality !== 'low'; }
+
+  function applyStyle() {
+    if (ramp) ramp.dispose();
+    ramp = W.toonRamp(K.bands);
+    W.setStyle({ ramp, inkColour: K.inkColour, inkWidth: inkWanted() ? K.inkWidth : 0 });
+  }
+  applyStyle();
 
   /* -------------------------------------------------------------------------
      THE SKY
@@ -179,7 +296,7 @@ export function createRenderer(canvas, opts) {
     envRT = pmrem.fromScene(envScene, 0, 100, 6000);
     skyUniforms.moonGain.value = mood.moonGain;
     scene.environment = envRT.texture;
-    scene.environmentIntensity = 1.0;
+    scene.environmentIntensity = KL.env;
   }
 
   /* -------------------------------------------------------------------------
@@ -192,7 +309,7 @@ export function createRenderer(canvas, opts) {
   moon.shadow.camera.far = 2600;
   moon.shadow.bias = -0.0006;
   moon.shadow.normalBias = 1.2;
-  moon.shadow.intensity = 0.52;
+  moon.shadow.intensity = K.shadow;
   scene.add(moon, moon.target);
 
   const hemi = new THREE.HemisphereLight(0x4878c4, 0x22422f, 1.95);
@@ -368,10 +485,23 @@ export function createRenderer(canvas, opts) {
   /* -------------------------------------------------------------------------
      THE PICTURE PASSES
   ------------------------------------------------------------------------- */
-  let composer = null, bloomPass = null;
+  let composer = null, bloomPass = null, composerMsaa = -1;
   function buildComposer() {
     if (composer) composer.dispose();
-    composer = new EffectComposer(renderer);
+    /* The composer makes its own target if it is not given one, and the one it
+       makes has no multisampling. Everything then gets drawn into that instead
+       of into the canvas, so `antialias: true` on the renderer never comes into
+       it and every edge in the game is a staircase - on high and med, which are
+       the two that use these passes at all. Handing it a target that IS
+       multisampled is the whole of the fix. */
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, {
+      type: THREE.HalfFloatType,
+      samples: Q.msaa
+    });
+    target.texture.name = 'EffectComposer.rt1';
+    composerMsaa = Q.msaa;
+    composer = new EffectComposer(renderer, target);
     composer.addPass(new RenderPass(scene, camera));
     // The threshold sits ABOVE white on purpose. Only things that are genuinely
     // brighter than daylight - the shards, the fires, the fireflies, the moon -
@@ -464,9 +594,9 @@ export function createRenderer(canvas, opts) {
     const water = terrain.hasWater ? buildWater(L) : null;
     if (water) root.add(water);
 
-    const leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, flatShading: true });
-    const windMat = windify(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, flatShading: true }));
-    const stoneMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .88, flatShading: true });
+    const leafMat = W.lit({ vertexColors: true, roughness: .92, flatShading: true });
+    const windMat = windify(W.lit({ vertexColors: true, roughness: .95, flatShading: true }));
+    const stoneMat = W.lit({ vertexColors: true, roughness: .88, flatShading: true });
 
     // Trees. Moonwood mixes pines with round ones; the Ruins only has dead ones.
     const all = L.trees.concat(L.scenery);
@@ -525,7 +655,7 @@ export function createRenderer(canvas, opts) {
       tufts.push({ x, y, s: (.95 + ((i * 11) % 70) / 100) * (MOOD[L.id] ? (MOOD[L.id].grass || 1) : 1) });
     }
     if (tufts.length) {
-      const mesh = instanced(W.tuftGeometry(0xffffff), windify(new THREE.MeshStandardMaterial({
+      const mesh = instanced(W.tuftGeometry(0xffffff), windify(W.lit({
         color: grassCol.multiplyScalar(1.75), vertexColors: true, roughness: 1, flatShading: true
       })), tufts.length, false);
       tufts.forEach((t, i) => {
@@ -796,7 +926,13 @@ export function createRenderer(canvas, opts) {
         allow = Math.min(allow, along - 26);
       }
     }
-    camLift += (want - camLift) * (1 - Math.pow(1 - (want > camLift ? .12 : .045), dt));
+    /* The camera climbs over whatever is in the way, and it climbs gradually -
+       right in play, and the last thing that will hold still for a picture. On
+       demand it goes straight to where it was heading. Without this a scene
+       with a tree behind him is framed differently every run, depending only on
+       how many frames the machine managed before the shutter. */
+    if (camSnap) { camLift = want; camSnap = false; }
+    else camLift += (want - camLift) * (1 - Math.pow(1 - (want > camLift ? .12 : .045), dt));
     camWhy.dist = Math.round(dist); camWhy.allow = Math.round(allow);
     camWhy.want = Math.round(want); camWhy.lift = Math.round(camLift);
     // Never closer than a bit over half way in. Past that the cure is worse than
@@ -831,8 +967,10 @@ export function createRenderer(canvas, opts) {
 
   const stat = { draws: 0, tris: 0, buildMs: 0 };
 
+  let frames = 0;
   function render(s) {
     const L = s.L, t = s.now / 1000;
+    frames++;
     renderer.info.reset();
 
     if (curId !== L.id) {
@@ -847,20 +985,23 @@ export function createRenderer(canvas, opts) {
       skyUniforms.fogCol.value.copy(fogCol);
 
       mood = MOOD[L.id] || MOOD.moonwood;
+      KL = (K.per && K.per[L.id]) ? Object.assign({}, K, K.per[L.id]) : K;
+      moon.shadow.intensity = KL.shadow;
       aimKey(mood);
       skyUniforms.moonDir.value.copy(KEY);
       skyUniforms.moonCol.value.setRGB(mood.moonCol[0], mood.moonCol[1], mood.moonCol[2]);
       skyUniforms.moonGain.value = mood.moonGain;
-      moon.color.setHex(mood.key);
-      hemi.color.setHex(mood.hemiSky); hemi.groundColor.setHex(mood.hemiGnd);
+      moon.color.setHex(mood.key);            tint(moon.color, KL.sat);
+      hemi.color.setHex(mood.hemiSky);        tint(hemi.color, KL.sat);
+      hemi.groundColor.setHex(mood.hemiGnd);  tint(hemi.groundColor, KL.sat);
       hemiOnWater.color.setHex(mood.hemiSky); hemiOnWater.groundColor.setHex(mood.hemiGnd);
-      rim.color.setHex(mood.rim); rim.intensity = mood.rimI;
+      rim.color.setHex(mood.rim); tint(rim.color, KL.sat); rim.intensity = mood.rimI * KL.rim;
       rim.position.copy(KEY).multiplyScalar(-1).setY(0.45).normalize().multiplyScalar(1000);
       moonOnWater.position.copy(KEY).multiplyScalar(1000);
-      renderer.toneMappingExposure = mood.exposure;
+      renderer.toneMappingExposure = mood.exposure * KL.exposure;
       mist.group.visible = mood.mist > 0;
 
-      scene.fog = new THREE.FogExp2(0x000000, mood.fog);
+      scene.fog = new THREE.FogExp2(0x000000, mood.fog * KL.fog);
       scene.fog.color.copy(fogCol);
       renderer.setClearColor(fogCol, 1);
       bakeSky();
@@ -1065,12 +1206,14 @@ export function createRenderer(canvas, opts) {
     /* A fight darkens the land around him: the moon drops back, the fog closes
        in, and what light is left is on the two of them. */
     const fighting = !!s.battle;
-    moon.intensity += ((fighting ? mood.keyI * .38 : mood.keyI) - moon.intensity) * .08;
+    const wantKey = mood.keyI * KL.key, wantHemi = mood.hemiI * KL.hemi;
+    moon.intensity += ((fighting ? wantKey * .38 : wantKey) - moon.intensity) * .08;
     if (!moonOnWater.userData.hold) moonOnWater.intensity = moon.intensity * .05;
-    hemi.intensity += ((fighting ? mood.hemiI * .41 : mood.hemiI) - hemi.intensity) * .08;
+    hemi.intensity += ((fighting ? wantHemi * .41 : wantHemi) - hemi.intensity) * .08;
     if (!hemiOnWater.userData.hold) hemiOnWater.intensity = hemi.intensity * .28;
     if (scene.fog) {
-      const want = fighting ? mood.fog * 1.7 : mood.fog;
+      const base = mood.fog * KL.fog;
+      const want = fighting ? base * 1.7 : base;
       scene.fog.density += (want - scene.fog.density) * .06;
     }
 
@@ -1112,13 +1255,77 @@ export function createRenderer(canvas, opts) {
     camera.updateProjectionMatrix();
   }
 
+  /* Give a land's geometry and materials back to the graphics card. Without
+     this, switching grade a few times would leak a forest each time. */
+  function scrapLand(land) {
+    scene.remove(land.root);
+    land.root.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      const m = o.material;
+      if (!m) return;
+      for (const one of Array.isArray(m) ? m : [m]) one.dispose();
+    });
+  }
+
+  /* Turning one knob of the grade at a time, from the console or from the shot
+     harness, without editing the table and reloading. Tuning a look is a dozen
+     small guesses and a picture after each one, and reloading between them
+     loses the land you were standing in. */
+  function grade(partial) {
+    if (!partial) return Object.assign({}, K);
+    const restyle = 'bands' in partial || 'inkColour' in partial || 'inkWidth' in partial;
+    Object.assign(K, partial);
+    if (restyle) {
+      // The shading model is baked into the materials as each land is built,
+      // so changing it means building them again.
+      applyStyle();
+      for (const id in builtLands) { scrapLand(builtLands[id]); delete builtLands[id]; }
+      curLand = null;
+    }
+    curId = null;                       // makes the next frame re-apply the rest
+    return Object.assign({}, K);
+  }
+
+  /* Put the light straight where the land is asking for it, instead of easing
+     towards it a frame at a time. The easing is deliberate in play - a land
+     fades up rather than snapping on - but anything taking a measured picture
+     needs the light it is going to end up with, and it needs it now. Software
+     rendering draws this scene at well under a frame a second, so waiting for
+     the fade to finish honestly takes minutes. Assumes nobody is fighting,
+     which is the only state a picture is taken in. */
+  /* Put the camera's climb where it is heading, now, instead of easing there.
+     Takes effect on the next frame, since what it is heading for is worked out
+     as part of drawing one. */
+  let camSnap = false;
+  function snapCamera() { camSnap = true; }
+
+  function snapLight() {
+    moon.intensity = mood.keyI * KL.key;
+    if (!moonOnWater.userData.hold) moonOnWater.intensity = moon.intensity * .05;
+    hemi.intensity = mood.hemiI * KL.hemi;
+    if (!hemiOnWater.userData.hold) hemiOnWater.intensity = hemi.intensity * .28;
+    if (scene.fog) scene.fog.density = mood.fog * KL.fog;
+  }
+
   function setQuality(q) {
     if (!QUALITY[q] || q === quality) return;
+    const hadInk = inkWanted();
     quality = q; Q = QUALITY[q];
+    /* Whether the figures are inked is decided as they are built, so crossing
+       the line that turns it off means building them again. Only when it
+       actually flips - a step between high and med must not throw a forest
+       away for nothing. */
+    if (inkWanted() !== hadInk) {
+      applyStyle();
+      for (const id in builtLands) { scrapLand(builtLands[id]); delete builtLands[id]; }
+      curLand = null; curId = null;
+    }
     renderer.shadowMap.enabled = !!Q.shadow;
     moon.castShadow = !!Q.shadow;
     if (Q.shadow) moon.shadow.mapSize.set(Q.shadow, Q.shadow);
-    if (Q.bloom && !composer) buildComposer();
+    // samples cannot be changed on a target that already exists, so a move
+    // between tiers that want different amounts of it builds a new one.
+    if (Q.bloom && (!composer || composerMsaa !== Q.msaa)) buildComposer();
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
     resize();
   }
@@ -1144,10 +1351,23 @@ export function createRenderer(canvas, opts) {
       land: curId, water: null, objects: 0, quality: quality,
       drawCalls: stat.draws, triangles: stat.tris, buildMs: stat.buildMs, cam: camWhy,
       geometries: i.memory.geometries, textures: i.memory.textures,
-      programs: i.programs ? i.programs.length : 0
+      programs: i.programs ? i.programs.length : 0,
+      /* The lights ease towards what the land asks for rather than snapping,
+         so these are where they have actually got to. Anything comparing two
+         pictures has to wait for them to arrive or it is measuring the fade. */
+      frame: frames,
+      lit: {
+        moon: +moon.intensity.toFixed(4),
+        hemi: +hemi.intensity.toFixed(4),
+        rim: +rim.intensity.toFixed(4),
+        fog: scene.fog ? +scene.fog.density.toFixed(7) : 0,
+        exposure: +renderer.toneMappingExposure.toFixed(4)
+      }
     };
+    out.ink = 0;
     scene.traverse(o => {
       out.objects++;
+      if (o.isMesh && o.userData.isInk) out.ink++;
       if (curLand && o === curLand.water) out.water = { y: o.position.y, visible: o.visible, frustum: o.frustumCulled };
     });
     return out;
@@ -1166,5 +1386,6 @@ export function createRenderer(canvas, opts) {
     else if (what === 'hemiwater') { hemiOnWater.intensity = v; hemiOnWater.userData.hold = true; }
   }
 
-  return { render, resize, setQuality, project, groundHeight, debug, debugSet, get quality() { return quality; } };
+  return { render, resize, setQuality, grade, snapLight, snapCamera, project, groundHeight, debug, debugSet,
+           get quality() { return quality; } };
 }

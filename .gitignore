@@ -1,0 +1,6 @@
+# Pictures the shot harness takes. They are for comparing one build against
+# another on the machine that took them, not for keeping.
+shots/
+
+# Playwright, if it gets installed locally to run tools/shots.mjs.
+node_modules/
