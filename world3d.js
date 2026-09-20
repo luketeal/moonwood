@@ -254,10 +254,32 @@ function inkMaterial(colour, width) {
 
 /* Give one shape its line. The line becomes a child of the shape, so it
    inherits every move the shape makes for nothing. */
+const _inkCache = new Map();
+const _size = new THREE.Vector3();
+
+/* A line thicker than the thing it is drawn round does not outline it, it
+   swallows it. A bat's wing is 1.2 across and the line is 1.8, so the wing
+   would come out as a solid dark slab rather than a wing with an edge. So a
+   part thinner than the line gets a finer one, in proportion. Materials are
+   shared between parts that land on the same width, so this costs a handful
+   of them rather than one per part. */
+function inkFor(mesh, mat, width) {
+  const geo = mesh.geometry;
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  geo.boundingBox.getSize(_size);
+  const thinnest = Math.min(_size.x, _size.y, _size.z) * Math.min(
+    Math.abs(mesh.scale.x), Math.abs(mesh.scale.y), Math.abs(mesh.scale.z));
+  const want = Math.min(width, thinnest * 0.28);
+  if (want >= width) return mat;
+  const key = want.toFixed(2);
+  if (!_inkCache.has(key)) _inkCache.set(key, inkMaterial(STYLE.inkColour, want));
+  return _inkCache.get(key);
+}
+
 function inkOne(mesh, mat) {
   const shell = mergeVertices(mesh.geometry.clone());
   shell.computeVertexNormals();
-  const line = new THREE.Mesh(shell, mat);
+  const line = new THREE.Mesh(shell, inkFor(mesh, mat, STYLE.inkWidth));
   line.castShadow = false;       // it is not a thing, it is a line round a thing
   line.receiveShadow = false;
   line.userData.isInk = true;
@@ -279,6 +301,8 @@ export function inkGroup(g) {
 export function setStyle(s) {
   Object.assign(STYLE, s);
   if (STYLE.ink) STYLE.ink.dispose();
+  for (const m of _inkCache.values()) m.dispose();
+  _inkCache.clear();
   STYLE.ink = (STYLE.inkColour !== undefined && STYLE.inkWidth > 0)
     ? inkMaterial(STYLE.inkColour, STYLE.inkWidth) : null;
 }
@@ -789,7 +813,7 @@ export function buildCritter(kind) {
       g.add(w); wings.push(w);
     }
     g.userData = { wings };
-    return g;
+    return inkGroup(g);
   }
   const col = kind === 'frog' ? 0x5f9c52 : 0xb5a48c;
   const body = new THREE.SphereGeometry(7, 7, 6);

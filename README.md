@@ -241,6 +241,12 @@ because a black line in a blue night reads as a hole cut in the picture, and it
 fades with distance like everything else. Only the figures get one - a line
 round all six hundred pines would be a different and much more expensive job.
 
+A part thinner than the line gets a finer one, in proportion. A bat's wing is
+1.2 across and the line is 1.8, so without that the wing would come out as a
+solid dark slab rather than a wing with an edge round it. The same clamp quietly
+improved him too: his arms and the trim of his cloak are thin enough to be
+caught by it, and the dark wedges they used to leave at his shoulders are gone.
+
 That line costs a second draw for every part of every figure, which is about a
 quarter more draw calls across a land for almost no extra triangles. `?gfx=low`
 therefore goes without it: the lowest tier is where something has already gone
