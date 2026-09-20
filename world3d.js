@@ -190,28 +190,25 @@ export function makeTerrain(L, curveOf) {
 /* ---------------------------------------------------------------------------
    HOW SURFACES ARE SHADED
 
-   Everything lit in the game is made through lit() rather than by naming a
-   material, so that the whole world can be shaded one way or the other from a
-   single switch.
+   Everything lit in the game is made through lit(), so the whole world is
+   shaded the one way from the one place.
 
-   `classic` is three's standard material: light falls off smoothly, the way it
-   does on a real surface.
-
-   `toon` is the same light put through a ramp of three or four flat steps, so a
-   surface is either lit or not lit with a hard edge between, which is what a
-   drawing does. The ramp is a tiny picture, one pixel per step, read with no
-   smoothing between them - that is the whole mechanism.
+   Light is put through a ramp of a few flat steps rather than falling off
+   smoothly, so a surface is either lit or not lit with a hard edge between,
+   which is what a drawing does. The ramp is a picture one pixel per step, read
+   with no smoothing between them - that is the whole mechanism.
 
    Toon materials have no roughness, no metalness and no reflections, so those
-   are dropped on the way through. The river is the one thing that still needs
-   them and so is built by hand rather than through here.
+   are dropped on the way through rather than being left to sit unused. The
+   river is the one surface that still needs them - it is what lies the moon on
+   the water - and so is built by hand rather than through here.
 
    This is set once before any land is built, and read while the shapes are
    being made. It is a module-level setting rather than an argument because
-   every one of the fourteen builders below would otherwise have to be handed
-   it and pass it on, for something that never changes while a land is alive.
+   every one of the fourteen builders below would otherwise have to be handed it
+   and pass it on, for something that never changes while a land is alive.
 --------------------------------------------------------------------------- */
-let STYLE = { toon: false, ramp: null, smoothFolk: false, ink: null };
+let STYLE = { ramp: null, ink: null, inkColour: 0, inkWidth: 0 };
 
 /* ---------------------------------------------------------------------------
    THE INK LINE
@@ -322,7 +319,6 @@ export function toonRamp(steps) {
 }
 
 export function lit(p) {
-  if (!STYLE.toon) return new THREE.MeshStandardMaterial(p);
   const q = {};
   for (const k in p) {
     if (k === 'roughness' || k === 'metalness' || k === 'envMapIntensity') continue;
@@ -657,14 +653,14 @@ export function buildLandmark(type) {
 /* Him, Luna, the creatures and the monsters. These are the one part of the
    game built out of round things - spheres and many-sided cylinders - and so
    the one part where a hard edge between lit and unlit can actually fall ACROSS
-   a surface instead of along the join between two flats. Faceting them throws
-   that away: every facet is one flat tone already, so the ramp has nothing left
-   to do. So when the world is being drawn rather than photographed, they are
-   smoothed. The trees are left alone - they are merged into one shape each and
-   lose their seams on the way, so they cannot be smoothed even if it helped,
-   and faceted foliage reads perfectly well in a drawing anyway. */
+   a surface instead of along the join between two flats. So they are smooth,
+   and note the absence of flatShading below - faceting them would throw that
+   away, since every facet is one flat tone already and the ramp would have
+   nothing left to do. The trees keep theirs: they are merged into one shape
+   each and lose their seams on the way, so they could not be smoothed even if
+   it helped, and faceted foliage reads perfectly well in a drawing. */
 const solid = (c, opts) => lit(Object.assign(
-  { color: c, roughness: .85, flatShading: !STYLE.smoothFolk }, opts || {}));
+  { color: c, roughness: .85 }, opts || {}));
 
 /* Things that are meant to glow are built BRIGHTER THAN WHITE. Nothing lit by
    the moon can ever reach these values, so the bloom pass picks out exactly the

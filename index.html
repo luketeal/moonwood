@@ -1079,11 +1079,8 @@ function draw(dt){
 /* ?gfx=high|med|low picks the quality by hand. Asking for one also pins it:
    see watchSpeed below. */
 const askedGfx=new URLSearchParams(location.search).get('gfx');
-/* ?look=anime|classic picks the grade - how the lands are developed, as
-   against what they are. See LOOK at the top of render3d.js. */
-const askedLook=new URLSearchParams(location.search).get('look');
 try{
- R=createRenderer(canvas,{curveOf:curve,quality:askedGfx||'high',look:askedLook||'classic'});
+ R=createRenderer(canvas,{curveOf:curve,quality:askedGfx||'high'});
 }catch(e){
  const el=document.getElementById('err');
  el.style.display='block';

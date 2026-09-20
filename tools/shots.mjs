@@ -23,9 +23,6 @@
      --out <dir>       where to put them                (default "shots")
      --scenes a,b      only these scenes                (default all)
      --quality <q>     high | med | low                 (default "high")
-     --look <a,b>      which grade(s) to photograph: classic, anime, or both
-                       comma-separated. Each gets its own file.
-                       (default "classic")
      --width, --height picture size                     (default 900x650)
      --hud             leave the dials and buttons in (they are hidden by
                        default, so what is compared is the 3-D picture)
@@ -80,7 +77,7 @@ const FROZEN_AT = 1700000000000;
 
 /* ------------------------------------------------------------------ args -- */
 function parseArgs(argv) {
-  const o = { tag: 'shot', out: 'shots', scenes: null, quality: 'high', width: 900, height: 650, list: false, hud: false, looks: ['classic'] };
+  const o = { tag: 'shot', out: 'shots', scenes: null, quality: 'high', width: 900, height: 650, list: false, hud: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--list') { o.list = true; continue; }
@@ -91,13 +88,11 @@ function parseArgs(argv) {
     else if (k === '--out') o.out = v;
     else if (k === '--scenes') o.scenes = v.split(',').map(s => s.trim()).filter(Boolean);
     else if (k === '--quality') o.quality = v;
-    else if (k === '--look') o.looks = v.split(',').map(x => x.trim()).filter(Boolean);
     else if (k === '--width') o.width = Number(v);
     else if (k === '--height') o.height = Number(v);
     else throw new Error(`no such option: ${k}`);
   }
   if (!['high', 'med', 'low'].includes(o.quality)) throw new Error(`--quality must be high, med or low`);
-  for (const l of o.looks) if (!['classic', 'anime'].includes(l)) throw new Error(`--look must be classic or anime, not "${l}"`);
   if (!Number.isFinite(o.width) || !Number.isFinite(o.height)) throw new Error('--width and --height must be numbers');
   return o;
 }
@@ -181,7 +176,7 @@ const problems = [];
 let shot = 0;
 
 try {
-  for (const scene of wanted) for (const lookName of opt.looks) {
+  for (const scene of wanted) {
     const page = await browser.newPage({
       viewport: { width: opt.width, height: opt.height },
       deviceScaleFactor: 1
@@ -194,7 +189,7 @@ try {
     // ?gfx pins the quality - which also stops the game quietly dropping a
     // step when the software renderer cannot keep up, so every run is drawn
     // to the same standard.
-    await page.goto(`http://127.0.0.1:${port}/index.html?gfx=${opt.quality}&look=${lookName}`, { waitUntil: 'networkidle' });
+    await page.goto(`http://127.0.0.1:${port}/index.html?gfx=${opt.quality}`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: /begin adventure/i }).click();
 
     // The renderer has to exist before we can put him anywhere.
@@ -239,6 +234,10 @@ try {
       // in during whatever ran between the two.
       window.MW.R.snapLight();
       window.MW.snapCam();
+      // ...and the camera's climb over whatever is behind him, which eases too
+      // and otherwise frames a scene with a tree at his back differently in
+      // every run.
+      window.MW.R.snapCamera();
       Date.now = () => t;
       // Only now is it safe to stop dt, which also holds the idle drift, the
       // hopping rabbits and the turning monsters still. Stopping it BEFORE the
@@ -250,8 +249,7 @@ try {
     await page.evaluate(() => new Promise(r =>
       requestAnimationFrame(() => requestAnimationFrame(r))));
 
-    const stem = opt.looks.length > 1 ? `${opt.tag}-${lookName}-${scene.name}` : `${opt.tag}-${scene.name}`;
-    const file = join(outDir, `${stem}.png`);
+    const file = join(outDir, `${opt.tag}-${scene.name}.png`);
     await page.screenshot({ path: file });
     shot++;
 
@@ -266,7 +264,7 @@ try {
     if (!lit || lit.lost) errs.push('the 3-D context was lost or never started');
 
     const where = relative(process.cwd(), file) || file;
-    if (errs.length) { problems.push(`${scene.name}/${lookName}: ${errs[0]}`); console.log(`  !  ${where}  (${errs[0]})`); }
+    if (errs.length) { problems.push(`${scene.name}: ${errs[0]}`); console.log(`  !  ${where}  (${errs[0]})`); }
     else console.log(`  ok ${where}`);
 
     await page.close();

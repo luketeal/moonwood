@@ -135,11 +135,12 @@ ease towards their target a frame at a time, which is right in play and useless
 here: the light wants about a hundred and thirty frames to arrive and headless
 Chromium draws this scene in software at well under a frame a second, and the
 camera is worse than slow - left alone it orbits him for ever, so there is no
-resting place to wait for at all. Snapping both, in the same breath as stopping
-the clock, took the difference between two runs of the same build from a quarter
-of the picture down to about one pixel in seven hundred. (Snapping the camera
-does mean it no longer slides around whatever is behind him the way it does in
-play, so a scene has to be stood somewhere with nothing directly at his back.)
+resting place to wait for at all. Three things are snapped, in the same breath
+as stopping the clock: the light, the camera, and the camera's climb over
+whatever is standing behind him, which eases as well and otherwise framed a
+scene with a tree at his back differently in every single run. Together they
+took the difference between two runs of the same build from a quarter of the
+picture down to about one pixel in seven hundred.
 
 **It is for how the game looks, not for how fast it runs.** Headless Chromium
 draws with software rather than with a graphics chip, and a frame time measured
@@ -148,10 +149,6 @@ from it means nothing. Speed still has to be checked on a real phone.
 `?gfx=high`, `?gfx=med` or `?gfx=low` on the end of the address picks the
 quality by hand, and asking for one by name also pins it - the game will not
 quietly drop a step underneath you, which is what makes two runs comparable.
-`?look=anime` or `?look=classic` picks the grade the same way.
-
-`node tools/shots.mjs --tag x --look classic,anime` photographs both in one run,
-so there is nothing to stash or rebuild to compare them.
 
 ## Publishing it
 
@@ -204,48 +201,38 @@ to build. What makes it look like anything is the lighting, not the models:
   and every edge in the game stays a staircase. Low skips the passes and draws
   straight to the canvas, which smooths itself
 
-### Two grades
+### How it is graded
 
 MOOD, below, says what each land is like. There is a second table next to it,
-LOOK, which says how the whole game is developed afterwards - the same three
-lands, printed two different ways. `?look=classic` is the game as it was, aiming
-at a photograph of a wood at night. `?look=anime` is aiming at a drawing of one:
-a tone curve that keeps colour instead of washing it out at the top, much less
-of the ambient fill that softened every edge between lit and unlit, a stronger
-key and rim to put that edge back, and shadows at full strength.
+GRADE, which says how the whole game is developed afterwards: not a photograph
+of a wood at night but a drawing of one. A tone curve that keeps colour instead
+of washing it out at the top; much less of the ambient fill that softened every
+edge between lit and unlit; a stronger key to meet it; shadows at full strength.
 
-On top of that, `anime` shades every surface through a ramp of three flat steps
-- shadow, mid, light - instead of letting the light fall off smoothly. The ramp
-is a picture three pixels wide read with no smoothing between them, and that is
-the whole mechanism. Three steps is what a cel drawing uses; four and five
-measured the same and looked softer, so three was chosen for being crispest
-rather than for the numbers.
+Every surface is shaded through a ramp of three flat steps - shadow, mid, light
+- instead of letting the light fall off smoothly. The ramp is a picture three
+pixels wide read with no smoothing between them, and that is the whole
+mechanism. Three steps is what a cel drawing uses; four and five measured the
+same and looked softer.
 
-Him, Luna, the creatures and the monsters are also smoothed rather than faceted
-under that grade. They are the only round things in the game, and so the only
-place a hard edge between lit and unlit can fall ACROSS a surface rather than
-along a join. Faceted, each flat already has one tone and the ramp has nothing
-to do. The trees stay faceted: they are merged into one shape each and lose
-their seams in the process, so they could not be smoothed even if it helped -
-and faceted foliage reads perfectly well in a drawing.
+Him, Luna, the creatures and the monsters are smooth rather than faceted. They
+are the only round things in the game, and so the only place a hard edge between
+lit and unlit can fall ACROSS a surface rather than along a join. The trees stay
+faceted: they are merged into one shape each and lose their seams in the
+process, so they could not be smoothed even if it helped, and faceted foliage
+reads perfectly well in a drawing.
 
-The river keeps the old material, because it is the one surface that still needs
-reflections and a roughness to put the moon on the water, and a toon material
-has neither.
-
-Finally, him, Luna, the creatures and the monsters get a line drawn round them,
-the old way: each shape is built a second time a little larger, turned inside
-out and painted dark, so the bigger copy is hidden behind the real one
-everywhere except round the edge. The line is a dark blue rather than black,
-because a black line in a blue night reads as a hole cut in the picture, and it
-fades with distance like everything else. Only the figures get one - a line
-round all six hundred pines would be a different and much more expensive job.
+They also get a line drawn round them, the old way: each shape is built a second
+time a little larger, turned inside out and painted dark, so the bigger copy is
+hidden behind the real one everywhere except round the edge. The line is a dark
+blue rather than black, because a black line in a blue night reads as a hole cut
+in the picture, and it fades with distance like everything else. Only the
+figures get one - a line round all six hundred pines would be a different and
+much more expensive job.
 
 A part thinner than the line gets a finer one, in proportion. A bat's wing is
 1.2 across and the line is 1.8, so without that the wing would come out as a
-solid dark slab rather than a wing with an edge round it. The same clamp quietly
-improved him too: his arms and the trim of his cloak are thin enough to be
-caught by it, and the dark wedges they used to leave at his shoulders are gone.
+solid dark slab rather than a wing with an edge round it.
 
 That line costs a second draw for every part of every figure, which is about a
 quarter more draw calls across a land for almost no extra triangles. `?gfx=low`
@@ -253,48 +240,45 @@ therefore goes without it: the lowest tier is where something has already gone
 wrong, and it is the one place that cannot spare the draws. Everything else
 about the grade stays.
 
-Two of those numbers came out the opposite way round to what was expected, and
-both were settled by measuring rather than by arguing about it:
+The river keeps the old material, because it is the one surface that still needs
+reflections and a roughness to put the moon on the water, and a toon material
+has neither.
+
+Three of the numbers in GRADE came out the opposite way round to what was
+expected, and all three were settled by measuring rather than by arguing:
 
 - **Fog was turned up, not down.** Haze is supposed to flatten a picture. Here
   it does the reverse, because the fog is the colour of the low sky, which is
   *lighter* than the wood in front of it - so the fog is what makes a far tree
-  read differently from a near one. Taking it away pulled the distances
-  together and measured as less separation, not more.
-- **Cutting the fill on its own does nothing.** Less ambient light does harden
-  the edge between lit and unlit, but by itself it just darkens everything,
-  because the fill was lighting the lit side too. It only buys anything if the
-  key comes up to meet it. The gap between them is the point, not the cut.
+  read differently from a near one. Taking it away measured as less separation.
+- **Cutting the ambient fill on its own does nothing.** It hardens the edge
+  between lit and unlit but darkens everything with it, because the fill was
+  lighting the lit side too. It only buys anything if the key comes up to meet
+  it. The gap between them is the point, not the cut.
+- **The rim light wanted turning down.** A drawing does lean on a rim light to
+  hold shapes apart - but the ink line does that job here, and the rim was left
+  washing light over everything and costing contrast.
 
 Each land then gets its own say in a `per` block, because two of them argued
 with the numbers above:
 
-- **The Ruins** is the exception that proves the fog rule. It is already
+- **The Ruins** is the exception that proves the fog rule: it is already
   flattened by four sheets of drifting mist, so it has no distinct near and far
-  for fog to tell apart, and more of it only compressed what separation was
-  left. It also had a worse problem: it was not far enough from Moonwood. Two
-  dark blue-green lands sat three times closer to each other, in colour, than
-  either did to Sunfield - which is the opposite of the point of having three.
-  MOOD calls this land "high, colourless and smothered", and the fix was in the
-  word colourless: most of the colour is wrung out of its light, so it separates
-  from Moonwood by being grey where Moonwood is green rather than by being
-  darker. That is the one place the drawing is *less* colourful than the
-  photograph, on purpose.
+  for fog to tell apart. It also had a worse problem - it was not far enough
+  from Moonwood. Two dark blue-green lands sat three times closer to each other,
+  in colour, than either did to Sunfield. MOOD calls this land "high, colourless
+  and smothered", and the fix was in the word colourless: most of the colour is
+  wrung out of its light, so it separates from Moonwood by being grey where
+  Moonwood is green rather than by being darker. It is the one land drawn with
+  *less* colour than the photograph had, on purpose.
 - **Sunfield** was coming out brighter than the photograph ever was, which
-  looked wrong rather than different, and is pulled back onto classic's own
-  brightness while keeping the colour.
+  looked wrong rather than different, and is pulled back onto the old brightness
+  while keeping the colour.
 
 There is a straight trade between the two things the grade is for - every
 further step of contrast costs saturation, because brightness pushes colour up
 into the part of the curve where it washes out. The numbers sit at the far end
 of where both are still better than the photograph was.
-
-One number went the other way in the end. The far-side rim light was turned UP
-early on, reasoning that a drawing leans on a rim light to hold shapes apart.
-Once the ink line arrived that stopped being true - the line does that job now,
-and the rim was left washing light over everything and costing contrast. It sits
-a little above the photograph's, for the job it was always doing (stopping a far
-tree merging into the tree behind it) and no higher.
 
 ### The three lands look different on purpose
 

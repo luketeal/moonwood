@@ -67,135 +67,95 @@ aimKey(mood);
    THE GRADE
 
    MOOD above says what each land is like. This says how the whole game is
-   developed afterwards - the same three lands, printed two different ways.
+   developed afterwards: not a photograph of a wood at night, but a drawing of
+   one. A drawing separates things by giving them flat areas of colour with a
+   hard edge between lit and unlit, and it keeps colour saturated instead of
+   letting bright things wash out to white.
 
-   `classic` is the game as it was: filmic, hazy, softly lit, aiming at a
-   photograph of a wood at night.
+   Every number here is a multiplier on what MOOD already says, so the three
+   lands keep their own character - Sunfield is still warm and open, the Ruins
+   are still smothered - they are just drawn rather than photographed.
 
-   `anime` is aiming at a drawing of one. A drawing separates things by giving
-   them flat areas of colour with a hard edge between lit and unlit, and it
-   keeps the colour saturated instead of letting bright things wash out to
-   white. So: a tone curve that holds colour rather than ACES, which throws it
-   away at the top; much less of the ambient fill that was softening every
-   terminator into a gradient; a stronger key and a much stronger rim to put
-   the edge back; darker, more definite shadows; and half the fog, because
-   uniform haze is the enemy of the flat separated planes a drawing wants.
+   Three of these came out the opposite way round to what was expected, and all
+   three were settled by measuring rather than by arguing about it:
 
-   Every number is a multiplier on what MOOD already says, so the three lands
-   keep their own character - Sunfield is still warm and open, the Ruins are
-   still smothered - they are just drawn rather than photographed.
+   FOG IS TURNED UP, not down. Haze is supposed to flatten a picture. Here it
+   does the reverse, because the fog is the colour of the low sky, which is
+   LIGHTER than the wood in front of it - so the fog is what makes a far tree
+   read differently from a near one. Taking it away pulled the distances
+   together and measured as less separation, not more.
 
-   Two of these came out the opposite way round to what was expected, and both
-   were settled by measuring rather than by arguing:
+   CUTTING THE FILL ON ITS OWN DOES NOTHING. Less ambient light does harden the
+   edge between lit and unlit, but by itself it just darkens everything, because
+   the fill was lighting the lit side too. It only buys anything if the key
+   comes up to meet it - hence key at 2.0 against hemi at 0.42. The gap between
+   them is the point, not the cut.
 
-   FOG. The obvious move was to cut it, on the grounds that haze flattens a
-   picture. Here it does the reverse. The fog is the colour of the low sky,
-   which is LIGHTER than the wood it sits in front of, so it is what makes a
-   far tree read differently from a near one. Taking it away pulled the
-   distances together and measured as LESS separation, not more. It is up
-   slightly instead.
+   THE RIM LIGHT WANTED TURNING DOWN, not up. A drawing does lean on a rim light
+   to hold shapes apart - but the ink line does that job here, and the rim was
+   left washing light over everything and costing contrast. It sits a little
+   above where the photograph had it, for the job it was always doing (stopping
+   a far tree merging into the tree behind it) and no higher.
 
-   AMBIENT FILL. Cutting the fill does harden the edge between lit and unlit,
-   but on its own it just darkens everything, because the fill was lighting the
-   lit side too. The fill only buys anything if the key comes up to meet it -
-   hence key at 2.0 against hemi at 0.42. The gap is the point, not the cut.
-
-   There is a straight trade between the two things this stage is for: every
+   There is also a straight trade between the two things this is for: every
    further step of contrast costs saturation, because brightness pushes colour
    up into the part of the curve where it washes out. These numbers sit at the
-   far end of where BOTH are still better than the photograph was - contrast up
-   28%, saturation up a little, the usable range up 27%. Pushing harder buys
-   contrast by spending the colour, which is the wrong way round for a drawing.
+   far end of where both are still better than the photograph was.
 --------------------------------------------------------------------------- */
-const LOOK = {
-  classic: {
-    tone: 'aces',
-    toon: false,      // three's standard material: light falls off smoothly
-    exposure: 1.00, fog: 1.00, key: 1.00, hemi: 1.00, rim: 1.00,
-    env: 1.00, shadow: 0.52, sat: 1.00
-  },
-  anime: {
-    tone: 'neutral',  // ACES throws colour away at the top; Neutral keeps it
-    toon: true,       // light through a ramp of flat steps instead of a falloff
-    /* The ramp: how much light reaches a surface in each band, from facing
-       away from the moon to facing it. Three is the count a cel drawing uses -
-       shadow, mid, light - and it measured the same as four and five, so it is
-       chosen for being the crispest rather than for the numbers. Five starts
-       to look like a gradient again and measured slightly worse. */
-    bands: [0.22, 0.62, 1.00],
-    smoothFolk: true, // round off him and the creatures, so the ramp has a curve
-                      // to cut across; the trees stay faceted either way
-    /* The line round him and the creatures. Not black: a black line in a blue
-       night reads as a hole cut in the picture. This is the dark end of the
-       same blue the land is lit with, so it sits in the scene rather than on
-       top of it. Width is in world units, so a figure far off gets a finer
-       line than one up close, which is what a drawing would do anyway. */
-    inkColour: 0x0d1a2b,
-    inkWidth: 1.8,
-    exposure: 1.15,   // spreads the picture over more of the range before it clips
-    fog: 1.15,        // MORE fog, not less - see the note below
-    key: 2.00,        // a definite light source, twice what the photograph used
-    hemi: 0.42,       // and much less fill: the gap between the two is the edge
-    /* The far-side light. Stage 2 put this UP, on the reasoning that a drawing
-       leans on a rim light to hold shapes apart. Once the ink line arrived that
-       stopped being true - the line does that job now, and the rim was left
-       washing light over everything and costing contrast. Measured across the
-       whole range it barely matters any more: no rim at all reads highest, and
-       every setting from 1.0 up is within half a point. It is kept at 1.0, a
-       little above the photograph's, for the job it was always doing - stopping
-       a far tree merging into the tree behind it - and no higher. */
-    rim: 1.00,
-    env: 0.35,        // the sky fill flattens too, and stage 3 drops it entirely
-    shadow: 1.00,     // shadows at full strength instead of half
+const GRADE = {
+  exposure: 1.15,   // spreads the picture over more of the range before it clips
+  fog: 1.15,        // MORE fog, not less - see above
+  key: 2.00,        // a definite light source, twice what the photograph used
+  hemi: 0.42,       // and much less fill: the gap between the two is the edge
+  rim: 1.00,        // the ink line holds shapes apart now, so this need not
+  env: 0.35,        // the sky fill flattens, and toon materials ignore it anyway
+  shadow: 1.00,     // shadows at full strength instead of half
+  sat: 1.00,        // per-land, below: how much colour each land's light keeps
 
-    /* One land argues with the numbers above, and it is allowed to.
+  /* The ramp every surface is shaded through: how much light reaches it in
+     each band, from facing away from the moon to facing it. Three is the count
+     a cel drawing uses - shadow, mid, light - and it measured the same as four
+     and five, so it is chosen for being the crispest rather than for the
+     numbers. Five starts to look like a gradient again. */
+  bands: [0.22, 0.62, 1.00],
 
-       The Ruins is already flattened by four sheets of drifting mist, so it
-       has no distinct near and far for fog to tell apart - there, more fog
-       only compresses what little separation is left, and measured as LESS
-       contrast, not more. It is the exception that shows what the fog rule
-       above actually depends on. Given its own, lighter fog it comes out
-       ahead on both counts like the other two. */
-    sat: 1.00,        // per-land, below: how much colour each land's light keeps
-    per: {
-      /* Sunfield was coming out brighter than the photograph ever was - the
-         one thing that looked wrong rather than different. Pulled back onto
-         classic's own brightness and contrast, keeping the colour. */
-      sunfield: { exposure: 0.80, key: 2.25, hemi: 0.34 },
+  /* The line round him and the creatures. Not black: a black line in a blue
+     night reads as a hole cut in the picture. This is the dark end of the same
+     blue the land is lit with, so it sits in the scene rather than on top of
+     it. Width is in world units, so a figure far off gets a finer line than one
+     up close, which is what a drawing would do anyway. */
+  inkColour: 0x0d1a2b,
+  inkWidth: 1.8,
 
-      /* The Ruins had a worse problem than being flat: it was not far enough
-         from Moonwood. Two dark blue-green lands measured three times closer
-         to each other than either was to Sunfield, which is the opposite of
-         the point of having three. MOOD calls this land "high, colourless and
-         smothered", so the fix is in the word colourless - most of the colour
-         is wrung out of its light, and it separates from Moonwood by being
-         grey where Moonwood is green rather than by being darker.
-         Fog sits at 0.68: enough back to keep the distance hazing out, which
-         is the smothered half of the description, without flattening it. */
-      ruins: { fog: 0.68, exposure: 1.34, key: 2.35, hemi: 0.32, env: 0.28, sat: 0.40 }
-    }
+  per: {
+    /* Sunfield came out brighter than the photograph ever was - the one thing
+       that looked wrong rather than different. Pulled back onto the old
+       brightness and contrast, keeping the colour. */
+    sunfield: { exposure: 0.80, key: 2.25, hemi: 0.34 },
+
+    /* The Ruins had a worse problem than being flat: it was not far enough from
+       Moonwood. Two dark blue-green lands measured three times closer to each
+       other, in colour, than either was to Sunfield - which is the opposite of
+       the point of having three. MOOD calls this land "high, colourless and
+       smothered", so the fix is in the word colourless: most of the colour is
+       wrung out of its light, and it separates from Moonwood by being grey
+       where Moonwood is green rather than by being darker. Its fog sits at
+       0.68 - enough to keep the distance hazing out, which is the smothered
+       half of the description, without flattening it. It is the one land drawn
+       with LESS colour than the photograph had, on purpose. */
+    ruins: { fog: 0.68, exposure: 1.34, key: 2.35, hemi: 0.32, env: 0.28, sat: 0.40 }
   }
 };
 
-/* Wring some colour out of a light, or wring more into it, without touching
-   what MOOD says the land is. MOOD is the land's own identity and is shared
-   with the classic grade; this is the drawing's opinion of it, and only the
-   drawing's. Leaves lightness and hue alone - a grey moon is still the same
-   moon, just greyer. */
+/* Wring some colour out of a light, or more into it, without touching what MOOD
+   says the land is. MOOD is the land's own identity; this is only how it is
+   drawn. Leaves lightness and hue alone - a grey moon is the same moon, greyer. */
 const _hsl = { h: 0, s: 0, l: 0 };
 function tint(col, mul) {
   if (mul === undefined || mul === 1) return;
   col.getHSL(_hsl);
   col.setHSL(_hsl.h, Math.min(1, Math.max(0, _hsl.s * mul)), _hsl.l);
 }
-
-const TONE = {
-  aces: THREE.ACESFilmicToneMapping,
-  neutral: THREE.NeutralToneMapping,
-  linear: THREE.LinearToneMapping,
-  agx: THREE.AgXToneMapping,
-  cineon: THREE.CineonToneMapping
-};
 
 const QUALITY = {
   high: { shadow: 1536, bloom: true, dpr: 2, undergrowth: 4200, shadowDist: 660, msaa: 4 },
@@ -209,13 +169,12 @@ export function createRenderer(canvas, opts) {
   const curveOf = opts.curveOf;
   let quality = opts.quality || 'high';
   let Q = QUALITY[quality];
-  let look = LOOK[opts.look] ? opts.look : 'classic';
-  let K = LOOK[look];        // the grade as written
-  let KL = K;                // ...and as it applies in the land he is standing in
+  const K = GRADE;   // the grade as written
+  let KL = K;        // ...and as it applies in the land he is standing in
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setClearColor(0x06080f, 1);
-  renderer.toneMapping = TONE[K.tone];
+  renderer.toneMapping = THREE.NeutralToneMapping;   // ACES throws colour away at the top
   renderer.toneMappingExposure = 1.3 * K.exposure;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -237,14 +196,9 @@ export function createRenderer(canvas, opts) {
   function inkWanted() { return (K.inkWidth || 0) > 0 && quality !== 'low'; }
 
   function applyStyle() {
-    if (K.toon && K.bands) {
-      if (ramp) ramp.dispose();
-      ramp = W.toonRamp(K.bands);
-    }
-    W.setStyle({
-      toon: !!K.toon, ramp, smoothFolk: !!K.smoothFolk,
-      inkColour: K.inkColour, inkWidth: inkWanted() ? K.inkWidth : 0
-    });
+    if (ramp) ramp.dispose();
+    ramp = W.toonRamp(K.bands);
+    W.setStyle({ ramp, inkColour: K.inkColour, inkWidth: inkWanted() ? K.inkWidth : 0 });
   }
   applyStyle();
 
@@ -972,7 +926,13 @@ export function createRenderer(canvas, opts) {
         allow = Math.min(allow, along - 26);
       }
     }
-    camLift += (want - camLift) * (1 - Math.pow(1 - (want > camLift ? .12 : .045), dt));
+    /* The camera climbs over whatever is in the way, and it climbs gradually -
+       right in play, and the last thing that will hold still for a picture. On
+       demand it goes straight to where it was heading. Without this a scene
+       with a tree behind him is framed differently every run, depending only on
+       how many frames the machine managed before the shutter. */
+    if (camSnap) { camLift = want; camSnap = false; }
+    else camLift += (want - camLift) * (1 - Math.pow(1 - (want > camLift ? .12 : .045), dt));
     camWhy.dist = Math.round(dist); camWhy.allow = Math.round(allow);
     camWhy.want = Math.round(want); camWhy.lift = Math.round(camLift);
     // Never closer than a bit over half way in. Past that the cure is worse than
@@ -1295,29 +1255,6 @@ export function createRenderer(canvas, opts) {
     camera.updateProjectionMatrix();
   }
 
-  /* Swapping the grade over without reloading, so the two can be put side by
-     side. Most of it is re-applied when a land is entered, so the cheapest
-     honest way to do it is to forget which land we are in and let the next
-     frame walk through that again - the land itself is already built and
-     cached, so nothing is thrown away but the sky bake. */
-  function setLook(name) {
-    if (!LOOK[name] || name === look) return;
-    look = name; K = LOOK[look]; KL = K;
-    renderer.toneMapping = TONE[K.tone];
-
-    /* Which material a surface gets is decided as it is built, so a land built
-       under one grade cannot be shown under the other. Throw them away and let
-       them be built again - about a tenth of a second each, and only when
-       somebody switches by hand. */
-    applyStyle();
-    for (const id in builtLands) {
-      scrapLand(builtLands[id]);
-      delete builtLands[id];
-    }
-    curLand = null;
-    curId = null;              // the next frame resolves KL and rebuilds
-  }
-
   /* Give a land's geometry and materials back to the graphics card. Without
      this, switching grade a few times would leak a forest each time. */
   function scrapLand(land) {
@@ -1335,11 +1272,9 @@ export function createRenderer(canvas, opts) {
      small guesses and a picture after each one, and reloading between them
      loses the land you were standing in. */
   function grade(partial) {
-    if (!partial) return Object.assign({ look }, K);
-    const restyle = 'toon' in partial || 'bands' in partial || 'smoothFolk' in partial
-                 || 'inkColour' in partial || 'inkWidth' in partial;
+    if (!partial) return Object.assign({}, K);
+    const restyle = 'bands' in partial || 'inkColour' in partial || 'inkWidth' in partial;
     Object.assign(K, partial);
-    renderer.toneMapping = TONE[K.tone] || renderer.toneMapping;
     if (restyle) {
       // The shading model is baked into the materials as each land is built,
       // so changing it means building them again.
@@ -1348,7 +1283,7 @@ export function createRenderer(canvas, opts) {
       curLand = null;
     }
     curId = null;                       // makes the next frame re-apply the rest
-    return Object.assign({ look }, K);
+    return Object.assign({}, K);
   }
 
   /* Put the light straight where the land is asking for it, instead of easing
@@ -1358,6 +1293,12 @@ export function createRenderer(canvas, opts) {
      rendering draws this scene at well under a frame a second, so waiting for
      the fade to finish honestly takes minutes. Assumes nobody is fighting,
      which is the only state a picture is taken in. */
+  /* Put the camera's climb where it is heading, now, instead of easing there.
+     Takes effect on the next frame, since what it is heading for is worked out
+     as part of drawing one. */
+  let camSnap = false;
+  function snapCamera() { camSnap = true; }
+
   function snapLight() {
     moon.intensity = mood.keyI * KL.key;
     if (!moonOnWater.userData.hold) moonOnWater.intensity = moon.intensity * .05;
@@ -1414,7 +1355,6 @@ export function createRenderer(canvas, opts) {
       /* The lights ease towards what the land asks for rather than snapping,
          so these are where they have actually got to. Anything comparing two
          pictures has to wait for them to arrive or it is measuring the fade. */
-      look: look,
       frame: frames,
       lit: {
         moon: +moon.intensity.toFixed(4),
@@ -1446,6 +1386,6 @@ export function createRenderer(canvas, opts) {
     else if (what === 'hemiwater') { hemiOnWater.intensity = v; hemiOnWater.userData.hold = true; }
   }
 
-  return { render, resize, setQuality, setLook, grade, snapLight, project, groundHeight, debug, debugSet,
-           get quality() { return quality; }, get look() { return look; } };
+  return { render, resize, setQuality, grade, snapLight, snapCamera, project, groundHeight, debug, debugSet,
+           get quality() { return quality; } };
 }
