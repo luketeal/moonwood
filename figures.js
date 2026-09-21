@@ -278,6 +278,26 @@ export function layFlat(geo, side) { geo.rotateX(side < 0 ? -Math.PI / 2 : Math.
 
    `front` is how far up the hem at +x rises; the lift falls away to nothing at
    the back. Only the low corners move, so the shoulders keep their shape. */
+/* Tear the bottom off something. A thing made of straw that ends in a smooth
+   turned curve reads as a bell, however good the colour is - what says straw
+   is that the hem is a different length everywhere you look. The variation is
+   in whole steps rather than a wobble, so it reads as strands rather than as
+   a dented lampshade, and it dies away above `below` so only the hem moves. */
+const ragged = (amount, below) => geo => {
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    if (y > below) continue;
+    const a = Math.atan2(z, x);
+    // three overlapping runs of strands, so no two look alike round the turn
+    const n = Math.sin(a * 7) * .5 + Math.sin(a * 13 + 1.7) * .3 + Math.sin(a * 23 + .6) * .2;
+    const depth = Math.min(1, (below - y) / 8);
+    pos.setY(i, y - Math.abs(n) * amount * depth);
+    const r = Math.hypot(x, z) || 1;
+    pos.setXYZ(i, x * (1 + n * .04 * depth), pos.getY(i), z * (1 + n * .04 * depth));
+  }
+};
+
 const drape = (lift, below, hug, hugFrom) => geo => {
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
@@ -885,6 +905,126 @@ function pawGeometry(p, C) {
 }
 
 /* ---------------------------------------------------------------------------
+   THINGS THAT STAND UP
+
+   A stone golem, a scarecrow and a wraith made of hay. All three stand on two
+   legs, so all three are built on BIPED - the same skeleton he is - and the
+   whole difference is what is hung on it and how big it is scaled afterwards.
+
+   That is the point of having had a rig at all. The golem took about twenty
+   numbers, because the hard part was already done for a boy in a cloak.
+
+   The wraith has no legs to speak of: `legless` puts a column of straw where
+   they would be and leaves the rig underneath untouched, so it still has hips
+   to sway from.
+--------------------------------------------------------------------------- */
+export function buildUpright(s) {
+  const j = makeRig(BIPED);
+  const mat = figureMat();
+  const C = s.col;
+  const body = [];
+
+  /* BIPED is a boy's skeleton, and a boy is narrow. A golem is not: built on
+     the rig as given, its arms hung at seven and a half from the middle of a
+     torso fifteen wide, so both of them were INSIDE it and the thing came out
+     as a lumpy cone. Widening the rig is a line each; rebuilding it per
+     monster would not be. */
+  if (s.shoulderZ) { j.shoulderL.position.z = -s.shoulderZ; j.shoulderR.position.z = s.shoulderZ; }
+  if (s.hipZ) { j.hipL.position.z = -s.hipZ; j.hipR.position.z = s.hipZ; }
+  if (s.shoulderY !== undefined) { j.shoulderL.position.y = s.shoulderY; j.shoulderR.position.y = s.shoulderY; }
+
+  if (s.torso) body.push(turned(s.torso, C.body, s.torsoSeg || 20));
+  if (s.belt) body.push(turned(s.belt, C.belt === undefined ? C.body : C.belt, 18));
+  if (s.legless) body.push(turned(s.legless, C.legless === undefined ? C.body : C.legless, 24,
+    s.ragged ? ragged(s.ragged[0], s.ragged[1]) : undefined));
+  if (s.neck) body.push(at(bone(s.neck.len, s.neck.r, s.neck.r * 1.1, C.body, { cap: false, foot: false }),
+    0, s.neck.at, 0));
+  attach(j.hips, body.map(g => at(g, 0, -HIPS, 0)), mat);
+
+  // THE HEAD, on the same parts every other animal's head is made of.
+  attach(j.head, animalHead(s, C).map(g => at(g, 0, s.head.at - (HIPS + 8 + 9 + 7 + 4), 0)), mat);
+
+  /* Eyes that GLOW are kept out of the merged head and given their own
+     material, because a light is not a surface - and handed back on `eyes`,
+     which is the list the renderer already pulses for every monster. */
+  const eyes = [];
+  if (s.glowEyes) {
+    for (const side of [-1, 1]) {
+      const e = new THREE.Mesh(new THREE.SphereGeometry(s.glowEyes[3], 10, 8),
+        glow(C.glow === undefined ? 0xf1d36a : C.glow, s.glowEyes[4] || 2.2));
+      e.position.set(s.glowEyes[0], s.glowEyes[1] - (HIPS + 8 + 9 + 7 + 4), side * s.glowEyes[2]);
+      j.head.add(e);
+      eyes.push(e);
+    }
+  }
+
+  for (const side of ['L', 'R']) {
+    const d = side === 'L' ? -1 : 1;
+    if (s.shoulder) {
+      const b = new THREE.SphereGeometry(s.shoulder.r, 14, 10);
+      b.scale(1, s.shoulder.squash || 1, 1);
+      attach(j['shoulder' + side], [paint(b, C.shoulder === undefined ? C.body : C.shoulder)], mat);
+    }
+    attach(j['shoulder' + side], [bone(LIMB.upper, s.arm[0], s.arm[1], C.arm === undefined ? C.body : C.arm,
+      { capScale: s.shoulder ? .8 : 1.05, foot: false })], mat);
+    attach(j['elbow' + side], [bone(LIMB.fore, s.arm[1], s.arm[2], C.arm === undefined ? C.body : C.arm,
+      { foot: false })], mat);
+    attach(j['wrist' + side], [s.claw
+      ? clawGeometry(s.claw, C.hand === undefined ? C.arm : C.hand, d)
+      : handGeometry(C.hand === undefined ? C.body : C.hand, d)], mat);
+
+    if (!s.legless) {
+      attach(j['hip' + side], [bone(LIMB.thigh, s.leg[0], s.leg[1], C.leg === undefined ? C.body : C.leg,
+        { capScale: 1.0 })], mat);
+      attach(j['knee' + side], [bone(LIMB.shin, s.leg[1], s.leg[2], C.leg === undefined ? C.body : C.leg,
+        { foot: false })], mat);
+      attach(j['ankle' + side], [footGeometry(C.foot === undefined ? C.leg : C.foot, s.foot || 12, 4)], mat);
+    }
+
+    const p = s.pose || {};
+    j['shoulder' + side].rotation.z = p.shoulder || 0;
+    j['shoulder' + side].rotation.x = d * (p.spread === undefined ? .12 : p.spread);
+    j['elbow' + side].rotation.z = p.elbow === undefined ? .2 : p.elbow;
+    if (!s.legless) {
+      j['hip' + side].rotation.z = p.hip || 0;
+      j['knee' + side].rotation.z = p.knee === undefined ? -.1 : p.knee;
+      j['ankle' + side].rotation.z = -((p.hip || 0) + (p.knee === undefined ? -.1 : p.knee));
+      j['hip' + side].rotation.x = d * (p.stance === undefined ? .06 : p.stance);
+    }
+  }
+
+  if (s.extra) s.extra(j, mat, C, s);
+
+  j.root.userData = {
+    rig: j, eyes, height: s.height || 72,
+    legs: [j.hipL, j.hipR], arms: [j.shoulderL, j.shoulderR],
+    knees: [j.kneeL, j.kneeR], elbows: [j.elbowL, j.elbowR],
+    ankles: [j.ankleL, j.ankleR], head: j.head
+  };
+  if (s.scale && s.scale !== 1) j.root.scale.setScalar(s.scale);
+  return inkGroup(j.root);
+}
+
+/* A hand that is not a hand: three blunt stone fingers, or a bundle of straw.
+   Built as one piece because nothing about it ever moves on its own. */
+function clawGeometry(c, colour, side) {
+  const out = [];
+  const palm = new THREE.SphereGeometry(c.r, 12, 9);
+  palm.scale(1, 1.1, .8);
+  palm.translate(0, -c.r * .9, 0);
+  out.push(paint(palm, colour));
+  for (let i = 0; i < (c.n || 3); i++) {
+    const a = (i - (c.n || 3) / 2 + .5) * .6;
+    const f = spindle([[0, 0], [c.r * .36, c.len * .3], [c.r * .22, c.len * .75], [0, c.len]], colour, 7);
+    f.rotateZ(Math.PI);                       // pointing down, like the rest of the arm
+    f.rotateX(side * a * .8);
+    f.rotateZ(a * .35);
+    out.push(at(f, 0, -c.r * 1.3, side * a * c.r * .7));
+  }
+  return mergeGeometries(out);
+}
+
+/* ---------------------------------------------------------------------------
    THINGS WITH WINGS
 
    An owl, a bat, a moth and a small quick bird. They have no legs worth
@@ -1225,6 +1365,100 @@ export const FLIERS = {
   }
 };
 
+/* ---------------------------------------------------------------------------
+   THE UPRIGHT SHEETS
+
+   All three are BIPED, so their heights are the same seventy his are and the
+   `scale` at the end is what makes the golem loom and the wraith drift. Torso
+   and skirt outlines are closed loops given in heights off the floor, exactly
+   as his tunic and cloak are.
+--------------------------------------------------------------------------- */
+export const UPRIGHT = {
+  golem: {
+    scale: 1.45, height: 74,
+    // Heavy through the shoulders and narrow at the waist: a thing built to
+    // hit, and the one silhouette nobody mistakes for a person in a coat.
+    shoulderZ: 13.5, hipZ: 7.5, shoulderY: -1,
+    torso: [[0, 26], [8.5, 26], [10, 30], [9, 38], [8.5, 44],
+            [11, 51], [12.5, 56], [11, 58], [8, 55], [7, 46],
+            [6.8, 38], [7.5, 30], [7.5, 27]],
+    neck: { len: 5, r: 4.4, at: 60 },
+    head: { at: 63, len: 15, prof: [[0, 0], [6, 2], [8, 5], [7.5, 10], [5, 13.5], [0, 15]] },
+    glowEyes: [4.4, 65.5, 2.6, 1.5, 2.4],
+    shoulder: { r: 8.5, squash: .85 },
+    arm: [5.4, 4.8, 4.2], leg: [6.4, 5.6, 4.8], foot: 15,
+    claw: { r: 4.2, len: 7, n: 3 },
+    pose: { shoulder: .10, elbow: .30, spread: .20, hip: .04, knee: -.14, stance: .10 },
+    col: { body: 0x6b6c66, shoulder: 0x7b7c74, arm: 0x63645e, leg: 0x5c5d57,
+           hand: 0x73746c, foot: 0x4e4f4a, coat: 0x73746c, glow: 0x9fd8ff },
+    // Veins of old light in the cracks, which is why it is weak to the moon.
+    extra: (j, mat, C) => {
+      const seam = new THREE.Mesh(new THREE.TorusGeometry(9.2, .7, 5, 18),
+        glow(0x9fd8ff, 1.7));
+      seam.rotation.x = Math.PI / 2;
+      seam.rotation.z = .22;
+      seam.position.y = 49 - HIPS;
+      j.hips.add(seam);
+    }
+  },
+
+  scarecrow: {
+    scale: 1.2, height: 74,
+    // Thin, and hanging off its own crossbar rather than standing on anything.
+    shoulderZ: 10.5, hipZ: 4.6, shoulderY: 2,
+    torso: [[0, 26], [6.4, 26], [7.6, 30], [6.2, 38], [5.8, 46],
+            [7.2, 52], [6.4, 55], [4.8, 53], [4.4, 44], [4.4, 34], [5.2, 27]],
+    belt: [[0, 33], [7.8, 33], [8.2, 37], [0, 37]],
+    neck: { len: 5, r: 2.4, at: 58 },
+    // A sack, tied at the neck. Rounder than a head and slightly too big.
+    head: { at: 62, len: 14, prof: [[0, 0], [6.5, 3], [7.4, 7], [6, 11], [3, 13.5], [0, 14]] },
+    glowEyes: [5.0, 64.5, 2.6, 1.3, 2.0],
+    arm: [3.0, 2.6, 2.2], leg: [3.6, 3.0, 2.6], foot: 10,
+    claw: { r: 2.4, len: 6, n: 4 },
+    // Arms out along the crossbar, which is the whole shape of a scarecrow.
+    pose: { shoulder: 0, elbow: .05, spread: 1.32, hip: .02, knee: -.08, stance: .06 },
+    col: { body: 0x6f5a3a, belt: 0x4a3a26, arm: 0x7a6440, leg: 0x5f4d32,
+           hand: 0xc9a85e, foot: 0x3f3324, coat: 0xbfa066, glow: 0xf0a63c },
+    extra: (j, mat, C) => {
+      // the crossbar it is tied to, and the straw coming out at the cuffs
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 46, 7),
+        lit({ color: 0x4a3a26, roughness: .95 }));
+      bar.rotation.x = Math.PI / 2;
+      bar.position.y = 52 - HIPS;
+      j.hips.add(bar);
+      const hat = new THREE.Mesh(
+        mergeGeometries([
+          paint(turned([[0, 0], [13, 0], [13.5, 1.6], [4.5, 2.6], [4.2, 1.4], [0, 1.2]], 0x8a7040, 18), 0x8a7040),
+          paint(at(turned([[0, 1.4], [4.6, 1.6], [5.2, 9], [3.4, 10], [3.0, 8], [0, 1.8]], 0x7a6238, 16), 0, 0, 0), 0x7a6238)
+        ]),
+        figureMat());
+      hat.position.y = 70 - (HIPS + 8 + 9 + 7 + 4);
+      hat.rotation.z = .12;
+      j.head.add(hat);
+    }
+  },
+
+  haywraith: {
+    scale: 1.25, height: 76,
+    // No legs: it ends in a fall of straw and drifts on it.
+    shoulderZ: 9.5, hipZ: 0, shoulderY: 2,
+    legless: [[0, 2], [15, 2], [16.5, 6], [12, 18], [9, 28], [7.5, 35],
+              [5.5, 35], [6.5, 26], [8.5, 15], [11, 5]],
+    ragged: [9, 16],
+    torso: [[0, 30], [6.5, 30], [8, 36], [7, 44], [8.6, 52],
+            [7.4, 56], [5.2, 54], [4.8, 44], [4.8, 36], [5.6, 31]],
+    neck: { len: 4, r: 3.0, at: 59 },
+    // A hood of straw with nothing much inside it.
+    head: { at: 62, len: 16, prof: [[0, 0], [6, 2], [7.2, 6], [5.6, 11], [2.6, 14.5], [0, 16]] },
+    glowEyes: [4.6, 64.0, 2.4, 1.6, 2.6],
+    arm: [3.4, 2.8, 2.2],
+    claw: { r: 2.6, len: 8, n: 4 },
+    pose: { shoulder: -.18, elbow: .62, spread: .78 },
+    col: { body: 0xa08544, legless: 0x8a7038, arm: 0xa89050, hand: 0xc9ab62,
+           coat: 0x9a7e40, glow: 0xb7e0ff }
+  }
+};
+
 /* A hedgehog's back. Spines laid in rows over the barrel, each one leaning the
    way the back falls away, so the silhouette is a bank of points rather than a
    lump with texture on it. They are merged into one shape - there are sixty of
@@ -1326,6 +1560,7 @@ export function buildMonster(m) {
 function drawFromSheet(id) {
   if (BEASTS[id]) return buildBeast(BEASTS[id]);
   if (FLIERS[id]) return buildFlier(FLIERS[id]);
+  if (UPRIGHT[id]) return buildUpright(UPRIGHT[id]);
   return null;
 }
 
@@ -1420,7 +1655,8 @@ const MONSTER_LIST = [
   ['rubblecrab', 'Rubble Crab'], ['shadehound', 'Shade Hound'], ['nightfox', 'Night Fox'],
   ['guardian', 'Gate Guardian', true]
 ];
-const drawn = id => (BEASTS[id] || FLIERS[id]) ? 'drawn from its own sheet' : 'not yet drawn — still the old shape';
+const drawn = id => (BEASTS[id] || FLIERS[id] || UPRIGHT[id])
+  ? 'drawn from its own sheet' : 'not yet drawn — still the old shape';
 
 export const FIGURES = [
   { id: 'player', name: 'The Wanderer', note: 'rebuilt on the kit', make: () => buildPlayer() },
