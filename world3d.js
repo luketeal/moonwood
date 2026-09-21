@@ -231,52 +231,101 @@ let STYLE = { ramp: null, ink: null, inkColour: 0, inkWidth: 0 };
    And the line is hung on the shape it belongs to rather than beside it, so an
    arm that swings takes its outline with it and nothing has to be kept in step.
 --------------------------------------------------------------------------- */
-function inkMaterial(colour, width) {
+function inkMaterial(colour) {
   const m = new THREE.MeshBasicMaterial({
     color: colour,
     side: THREE.BackSide,   // only the far side of the bigger copy is drawn
     fog: true               // a far-off figure should not keep a crisp black line
   });
   m.onBeforeCompile = sh => {
-    sh.uniforms.uInk = { value: width };
-    sh.vertexShader = 'uniform float uInk;\n' + sh.vertexShader.replace(
+    sh.vertexShader = 'attribute float aInk;\n' + sh.vertexShader.replace(
       '#include <begin_vertex>',
       `#include <begin_vertex>
-       transformed += normalize(normal) * uInk;`
+       transformed += normalize(normal) * aInk;`
     );
   };
   m.customProgramCacheKey = () => 'ink';
   return m;
 }
 
-/* Give one shape its line. The line becomes a child of the shape, so it
-   inherits every move the shape makes for nothing. */
-const _inkCache = new Map();
+/* ---------------------------------------------------------------------------
+   HOW THICK THE LINE IS, PIECE BY PIECE
+
+   A line thicker than the thing it is drawn round does not outline it, it
+   swallows it. A bat's wing is 1.2 across and the line is 1.8, so the wing
+   comes out as a solid dark slab rather than a wing with an edge.
+
+   This used to be measured per MESH, which was right while every part of every
+   figure was its own mesh. It is not right any more. A figure is now merged
+   down to a handful of meshes - his whole torso, head, hair and eyes are one -
+   and the thinnest thing in that mesh is an eye less than two across, while the
+   mesh as a whole is seventeen. Measured per mesh, the eye got the full line
+   and disappeared inside it, and the hair grew a shell that broke out through
+   his face.
+
+   So it is measured per ISLAND: per connected run of surface inside the mesh.
+   The eye is one island, the hair another, the tunic another, and each gets the
+   line it can carry. The width travels on the geometry as an attribute rather
+   than in the material, which means one ink material for the whole game rather
+   than one per width.
+--------------------------------------------------------------------------- */
 const _size = new THREE.Vector3();
 
-/* A line thicker than the thing it is drawn round does not outline it, it
-   swallows it. A bat's wing is 1.2 across and the line is 1.8, so the wing
-   would come out as a solid dark slab rather than a wing with an edge. So a
-   part thinner than the line gets a finer one, in proportion. Materials are
-   shared between parts that land on the same width, so this costs a handful
-   of them rather than one per part. */
-function inkFor(mesh, mat, width) {
-  const geo = mesh.geometry;
-  if (!geo.boundingBox) geo.computeBoundingBox();
-  geo.boundingBox.getSize(_size);
-  const thinnest = Math.min(_size.x, _size.y, _size.z) * Math.min(
-    Math.abs(mesh.scale.x), Math.abs(mesh.scale.y), Math.abs(mesh.scale.z));
-  const want = Math.min(width, thinnest * 0.28);
-  if (want >= width) return mat;
-  const key = want.toFixed(2);
-  if (!_inkCache.has(key)) _inkCache.set(key, inkMaterial(STYLE.inkColour, want));
-  return _inkCache.get(key);
+function inkWidths(shell, scale, width) {
+  const pos = shell.attributes.position;
+  const n = pos.count;
+  const aInk = new Float32Array(n);
+  aInk.fill(width);
+
+  const idx = shell.index;
+  if (idx) {
+    /* Which corners belong to the same piece of surface. Straight union-find
+       over the triangles: two corners that share a triangle are the same
+       piece, and pieces merge as the triangles are walked. */
+    const parent = new Int32Array(n);
+    for (let i = 0; i < n; i++) parent[i] = i;
+    const find = a => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    const join = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[b] = a; };
+    for (let i = 0; i < idx.count; i += 3) {
+      const a = idx.getX(i), b = idx.getX(i + 1), c = idx.getX(i + 2);
+      join(a, b); join(a, c);
+    }
+
+    // The extent of each piece, gathered in one pass.
+    const box = new Map();
+    for (let i = 0; i < n; i++) {
+      const r = find(i);
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      let e = box.get(r);
+      if (!e) box.set(r, e = [x, x, y, y, z, z]);
+      else {
+        if (x < e[0]) e[0] = x; else if (x > e[1]) e[1] = x;
+        if (y < e[2]) e[2] = y; else if (y > e[3]) e[3] = y;
+        if (z < e[4]) e[4] = z; else if (z > e[5]) e[5] = z;
+      }
+    }
+    const want = new Map();
+    for (const [r, e] of box) {
+      const thin = Math.min(e[1] - e[0], e[3] - e[2], e[5] - e[4]) * scale;
+      want.set(r, Math.min(width, thin * 0.28));
+    }
+    for (let i = 0; i < n; i++) aInk[i] = want.get(find(i));
+  } else {
+    // No index to walk, so it can only be measured whole.
+    if (!shell.boundingBox) shell.computeBoundingBox();
+    shell.boundingBox.getSize(_size);
+    const thin = Math.min(_size.x, _size.y, _size.z) * scale;
+    aInk.fill(Math.min(width, thin * 0.28));
+  }
+  shell.setAttribute('aInk', new THREE.BufferAttribute(aInk, 1));
 }
 
 function inkOne(mesh, mat) {
   const shell = mergeVertices(mesh.geometry.clone());
   shell.computeVertexNormals();
-  const line = new THREE.Mesh(shell, inkFor(mesh, mat, STYLE.inkWidth));
+  const scale = Math.min(Math.abs(mesh.scale.x), Math.abs(mesh.scale.y), Math.abs(mesh.scale.z));
+  inkWidths(shell, scale, STYLE.inkWidth);
+  const line = new THREE.Mesh(shell, mat);
   line.castShadow = false;       // it is not a thing, it is a line round a thing
   line.receiveShadow = false;
   line.userData.isInk = true;
@@ -298,10 +347,8 @@ export function inkGroup(g) {
 export function setStyle(s) {
   Object.assign(STYLE, s);
   if (STYLE.ink) STYLE.ink.dispose();
-  for (const m of _inkCache.values()) m.dispose();
-  _inkCache.clear();
   STYLE.ink = (STYLE.inkColour !== undefined && STYLE.inkWidth > 0)
-    ? inkMaterial(STYLE.inkColour, STYLE.inkWidth) : null;
+    ? inkMaterial(STYLE.inkColour) : null;
 }
 
 /* The ramp. Each number is how much of the light reaches a surface in that
@@ -364,7 +411,7 @@ export function groundMesh(L, terrain, quality) {
    paint() stamps a colour onto every corner of a shape, so a tree that is brown
    at the bottom and green at the top is still ONE shape drawn in ONE go.
 --------------------------------------------------------------------------- */
-function paint(geo, hex) {
+export function paint(geo, hex) {
   // Some of three's shapes come indexed and some do not, and they cannot be
   // merged with each other. Everything here is flat-shaded anyway, so drop the
   // index and they all become mergeable.
@@ -376,7 +423,7 @@ function paint(geo, hex) {
   geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
   return geo;
 }
-function at(geo, x, y, z) { geo.translate(x, y, z); return geo; }
+export function at(geo, x, y, z) { geo.translate(x, y, z); return geo; }
 
 // Every tree is built 100 tall and then scaled, so one shape does for all of them.
 export const TREE_H = 100;
@@ -645,20 +692,21 @@ export function buildLandmark(type) {
 }
 
 /* ---------------------------------------------------------------------------
-   HIM, LUNA, AND EVERYTHING THAT WALKS ABOUT
+   THE TWO MATERIALS THE SMALL FINDS ARE MADE OF
 
-   All of them are built the same way: a few solid shapes in a group, with the
-   bits that need to move kept on userData so the renderer can find them again.
+   Him, Luna, the creatures and the monsters used to be built here too. They
+   have moved to figures.js, because they are the one part of the game that
+   BENDS, and a thing that bends wants a skeleton rather than a pile of shapes.
+   What is left below is the scenery: things that are placed once and never move
+   again.
+
+   `solid` is smooth on purpose - note the absence of flatShading. The light
+   ramp puts a hard edge between lit and unlit, and on a faceted surface that
+   edge can only fall along a facet join, which is a straight line. On a smooth
+   one it falls where the form turns away, which is a curve. The trees keep
+   their facets: they are merged down to one shape each and lose their seams on
+   the way, and faceted foliage reads perfectly well in a drawing anyway.
 --------------------------------------------------------------------------- */
-/* Him, Luna, the creatures and the monsters. These are the one part of the
-   game built out of round things - spheres and many-sided cylinders - and so
-   the one part where a hard edge between lit and unlit can actually fall ACROSS
-   a surface instead of along the join between two flats. So they are smooth,
-   and note the absence of flatShading below - faceting them would throw that
-   away, since every facet is one flat tone already and the ramp would have
-   nothing left to do. The trees keep theirs: they are merged into one shape
-   each and lose their seams on the way, so they could not be smoothed even if
-   it helped, and faceted foliage reads perfectly well in a drawing. */
 const solid = (c, opts) => lit(Object.assign(
   { color: c, roughness: .85 }, opts || {}));
 
@@ -666,162 +714,6 @@ const solid = (c, opts) => lit(Object.assign(
    the moon can ever reach these values, so the bloom pass picks out exactly the
    things that are supposed to spill light and nothing else. */
 const glow = (hex, gain) => new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(gain) });
-
-export function buildPlayer() {
-  const g = new THREE.Group();
-  const legs = [], arms = [];
-
-  for (const side of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(7, 20, 8), solid(0x39476b));
-    leg.position.set(0, 12, side * 4.5);
-    leg.castShadow = true;
-    g.add(leg); legs.push(leg);
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(11, 5, 9), solid(0x5b3f24));
-    boot.position.set(1, -8.5, 0);
-    leg.add(boot);
-  }
-
-  // The cloak, wider at the hem than the shoulder, with a paler lining showing
-  // down one side - that edge is what gives him a shape at a distance.
-  const cloak = new THREE.Mesh(new THREE.CylinderGeometry(9, 17, 32, 8), solid(0x6d46b5));
-  cloak.position.y = 36; cloak.castShadow = true; g.add(cloak);
-  const trim = new THREE.Mesh(new THREE.CylinderGeometry(17.4, 17.4, 4, 8), solid(0x8257d6));
-  trim.position.y = 21.5; g.add(trim);
-
-  for (const side of [-1, 1]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(6, 19, 6), solid(0x6d46b5));
-    arm.position.set(0, 42, side * 11);
-    arm.castShadow = true;
-    g.add(arm); arms.push(arm);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(3.4, 6, 5), solid(0xe9d3b8));
-    hand.position.set(0, -11, 0);
-    arm.add(hand);
-  }
-
-  const collar = new THREE.Mesh(new THREE.CylinderGeometry(10.5, 10.5, 5, 8), solid(0x8257d6));
-  collar.position.y = 51; g.add(collar);
-
-  const hood = new THREE.Mesh(new THREE.SphereGeometry(11, 10, 8), solid(0x3b2a46));
-  hood.position.y = 58; hood.castShadow = true; g.add(hood);
-  // The peak of the hood, thrown back over his shoulders.
-  const peak = new THREE.Mesh(new THREE.ConeGeometry(7.5, 17, 7), solid(0x3b2a46));
-  peak.position.set(-9, 57, 0); peak.rotation.z = -1.15; g.add(peak);
-
-  const face = new THREE.Mesh(new THREE.SphereGeometry(6.6, 8, 6), solid(0xe9d3b8));
-  face.position.set(7, 56, 0); g.add(face);
-
-  g.userData = { legs, arms, cloak };
-  return inkGroup(g);
-}
-
-export function buildLuna() {
-  const g = new THREE.Group();
-  const robe = new THREE.Mesh(new THREE.ConeGeometry(14, 40, 8), solid(0x352641));
-  robe.position.y = 20; robe.castShadow = true; g.add(robe);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(10, 10, 8), solid(0xd9a1d5));
-  head.position.y = 47; head.castShadow = true; g.add(head);
-  const staff = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 52, 5), solid(0x8f7ac4));
-  staff.position.set(0, 26, 11); g.add(staff);
-  const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(4.2, 1), glow(0xffe9a8, 2.6));
-  orb.position.set(0, 54, 11); g.add(orb);
-  const light = new THREE.PointLight(0xf5d76e, 0, 300, 2);
-  light.position.set(0, 54, 11); g.add(light);
-  g.userData = { orb, light };
-  return inkGroup(g);
-}
-
-const CREATURE_COLOUR = {
-  forest: 0x75a85c, magic: 0xa87ed6, water: 0x6faed0,
-  spark: 0xe8b45c, stone: 0x9aa1ad
-};
-
-export function buildCreature(kind) {
-  const col = CREATURE_COLOUR[kind] || 0xd7b65e;
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.SphereGeometry(10, 10, 8), solid(col));
-  body.scale.set(1, .9, 1); body.position.y = 9; body.castShadow = true; g.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(13, 10, 8), solid(col));
-  head.position.y = 25; head.castShadow = true; g.add(head);
-  for (const side of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(5, 20, 5), solid(col));
-    ear.position.set(-2, 38, side * 9);
-    ear.rotation.x = side * -.35;
-    g.add(ear);
-  }
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(2.7, 6, 5), solid(0x16202f, { roughness: .3 }));
-    eye.position.set(10, 27, side * 5);
-    g.add(eye);
-  }
-  const spark = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4, 0), glow(0xffffff, 2.2));
-  spark.position.y = 52;
-  g.add(spark);
-  g.userData = { spark };
-  return inkGroup(g);
-}
-
-export function buildMonster(boss) {
-  const g = new THREE.Group();
-  const dark = boss ? 0x3b3560 : 0x6a3f58, light = boss ? 0x4d4680 : 0x7e4b67;
-  const body = new THREE.Mesh(new THREE.SphereGeometry(17, 10, 8), solid(dark));
-  body.scale.set(1, .85, 1); body.position.y = 15; body.castShadow = true; g.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(19, 10, 8), solid(light));
-  head.position.y = 34; head.castShadow = true; g.add(head);
-  for (const side of [-1, 1]) {
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(6, 24, 5), solid(light));
-    horn.position.set(-3, 50, side * 13);
-    horn.rotation.x = side * -.3;
-    g.add(horn);
-  }
-  const eyes = [];
-  if (boss) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(8, 10, 8), glow(0xf5d76e, 2.4));
-    eye.position.set(15, 36, 0); g.add(eye); eyes.push(eye);
-    const ring = new THREE.Group();
-    for (let i = 0; i < 5; i++) {
-      const sh = new THREE.Mesh(new THREE.OctahedronGeometry(4.5), glow(0xc8b4ff, 2.2));
-      sh.position.set(Math.cos(i * 1.256) * 34, 0, Math.sin(i * 1.256) * 34);
-      ring.add(sh);
-    }
-    ring.position.y = 36; g.add(ring);
-    g.userData.ring = ring;
-  } else {
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(3.6, 8, 6), glow(0xf1d36a, 2.0));
-      eye.position.set(16, 36, side * 6.5);
-      g.add(eye); eyes.push(eye);
-    }
-  }
-  g.userData.eyes = eyes;
-  if (boss) g.scale.setScalar(1.7);
-  return inkGroup(g);
-}
-
-export function buildCritter(kind) {
-  const g = new THREE.Group();
-  const vmat = lit({ vertexColors: true, roughness: .85, flatShading: true });
-  if (kind === 'bat') {
-    g.add(new THREE.Mesh(paint(at(new THREE.SphereGeometry(4.5, 6, 5), 0, 13, 0), 0x4a3f5c), vmat));
-    const wings = [];
-    for (const side of [-1, 1]) {
-      const w = new THREE.Mesh(paint(new THREE.BoxGeometry(9, 1.2, 12), 0x4a3f5c), vmat);
-      w.position.set(0, 13, side * 8);
-      g.add(w); wings.push(w);
-    }
-    g.userData = { wings };
-    return inkGroup(g);
-  }
-  const col = kind === 'frog' ? 0x5f9c52 : 0xb5a48c;
-  const body = new THREE.SphereGeometry(7, 7, 6);
-  body.scale(1, .8, .9); body.translate(0, 6, 0);
-  const parts = [paint(body, col), paint(at(new THREE.SphereGeometry(4.6, 7, 6), 4.5, 11, 0), col)];
-  if (kind === 'rabbit') {
-    for (const side of [-1, 1]) parts.push(paint(at(new THREE.BoxGeometry(2, 11, 3.4), 3, 18, side * 2.6), col));
-  }
-  parts.push(paint(at(new THREE.SphereGeometry(1.3, 5, 4), 7.5, 12, 2), 0x1d2430));
-  g.add(new THREE.Mesh(mergeGeometries(parts), vmat));
-  return inkGroup(g);
-}
 
 /* ---------------------------------------------------------------------------
    THE SMALL FINDS

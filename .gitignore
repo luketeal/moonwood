@@ -4,3 +4,5 @@ shots/
 
 # Playwright, if it gets installed locally to run tools/shots.mjs.
 node_modules/
+package.json
+package-lock.json

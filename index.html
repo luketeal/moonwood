@@ -58,6 +58,11 @@
   #continue{display:none;width:100%;padding:16px 30px;border-radius:14px;background:#3c8f6a;font-size:18px;font-weight:700;margin-top:10px;touch-action:manipulation;cursor:pointer}
   #continue:active{background:#4dab80}
   #saveinfo{display:none;color:#9fd8b8;font-size:14px;margin:10px 0 0}
+  /* The figure viewer. Deliberately quiet - it is a workshop door, not a way
+     into the game, and a child looking for "start" should not find this first. */
+  #figlink{display:inline-block;margin-top:16px;color:#a78bfa;font-size:14px;text-decoration:none;
+    border-bottom:1px dotted #6d46b5;padding-bottom:2px}
+  #figlink:active{color:#c4b0ff}
   /* Small "Progress saved" note that fades in and out. */
   #saved{position:absolute;left:50%;bottom:31%;transform:translateX(-50%);background:rgba(10,17,30,.88);border:1px solid #6fbf8f;color:#bff0d0;border-radius:11px;padding:6px 13px;font-size:13px;opacity:0;transition:opacity .35s;pointer-events:none;z-index:6}
   #saved.show{opacity:1}
@@ -123,6 +128,7 @@ window.onerror=function(msg,src,line){
     <p>Press <b>ACTION</b> near shards, creatures and people. Every creature you discover teaches you a move you can use in a fight — and each land's creatures know how to beat that land's monsters.</p>
     <button id="continue">▶ Continue</button>
     <button id="play">Begin Adventure</button>
+    <a id="figlink" href="figures.html">Meet the characters</a>
     <p id="saveinfo"></p>
     <p id="nojs" style="color:#ff9a9a;font-weight:700;font-size:14px;margin-top:16px">⚠️ JavaScript is not running here, so the button will do nothing. Open this file directly in Safari or Chrome instead of a file preview.</p>
   </div>
@@ -617,6 +623,12 @@ if(savedGame){
 const playBtn=document.getElementById('play'),contBtn=document.getElementById('continue');
 ['click','pointerup','touchend'].forEach(ev=>playBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();startGame(false);}));
 ['click','pointerup','touchend'].forEach(ev=>contBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();startGame(true);}));
+/* Anywhere on the start screen begins the adventure, which is right for a
+   child with a thumb and wrong for the one link on it that goes somewhere
+   else - without this, tapping "Meet the characters" would start the game
+   underneath it and then navigate away from what it had just started. */
+['click','pointerup','touchend'].forEach(ev=>
+  document.getElementById('figlink').addEventListener(ev,e=>e.stopPropagation()));
 document.getElementById('start').addEventListener('click',()=>startGame(!!readSave()));
 document.getElementById('restart').onclick=()=>{clearSave();location.reload()};
 
