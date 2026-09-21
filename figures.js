@@ -192,6 +192,41 @@ export function turned(pts, colour, seg, deform) {
   return paint(geo, colour);
 }
 
+/* ---------------------------------------------------------------------------
+   A SPINDLE
+
+   The other half of `turned`, and the one bodies are made of. `turned` takes a
+   CLOSED outline and gives back a tube with a wall - right for a cloak, which
+   has a hole in it for a head. A body has no hole: its outline runs from a
+   point at one end, out to its widest, and back to a point at the other.
+
+   So this takes an OPEN profile and closes it against the axis at both ends.
+   The two ends become proper poles, exactly as they are on a sphere, and the
+   ink line handles them the same way it handles a sphere. (What it must not do
+   is touch the axis in the middle of a CLOSED loop - that leaves a sliver of
+   near-nothing which the ink shell blows up into a spike.)
+--------------------------------------------------------------------------- */
+export function spindle(pts, colour, seg, deform) {
+  const curve = new THREE.CatmullRomCurve3(
+    pts.map(([r, y]) => new THREE.Vector3(r, y, 0)), false, 'centripetal');
+  const fine = curve.getPoints(Math.max(20, pts.length * 5))
+    .map(p => new THREE.Vector2(Math.max(0, p.x), p.y));
+  const geo = new THREE.LatheGeometry(fine, seg || 18);
+  if (deform) { deform(geo); geo.computeVertexNormals(); }
+  return paint(geo, colour);
+}
+
+/* Lay a spindle down along the way the figure faces, so its profile reads as
+   nose-to-tail rather than head-to-toe. A body is the same kind of shape as a
+   head or a tail - round in section, varying in girth along its length - so
+   all three are made this way. */
+export function alongX(geo) { geo.rotateZ(-Math.PI / 2); return geo; }
+
+/* ...and the same the other way, for a tail, which grows backwards out of the
+   end the head is not at. Turning `droop` up now lowers it, which is what the
+   word means. */
+export function alongNegX(geo) { geo.rotateZ(Math.PI / 2); return geo; }
+
 /* A cloak hangs level all the way round only if nobody is inside it. This lifts
    the hem at the front - where the figure's legs are - so it parts as he walks,
    which is most of what says "cloth" rather than "bell".
@@ -536,6 +571,399 @@ export function buildLuna() {
 }
 
 /* ---------------------------------------------------------------------------
+   FOUR-LEGGED THINGS
+
+   Most of the bestiary is an animal: a bear, a hound, a fox, a hare, a bull,
+   a hedgehog, a stone pup, a cat. They differ enormously in how they LOOK and
+   hardly at all in how they are BUILT - a spine with a leg at each corner, a
+   neck, a head, a tail. So there is one builder, and each of them is a sheet
+   of numbers handed to it.
+
+   The rig is generated from the sheet rather than written out, because a hare
+   and a bull do not want the same skeleton at different scales: the hare's back
+   legs are half again as long as its front ones and the bull's are not, and
+   that difference IS the animal.
+
+   Nothing here is a monster or a creature particularly. `stonepup` and
+   `glimmercat` are friendly and `shadehound` is not, and the only difference
+   between them in this file is the numbers.
+--------------------------------------------------------------------------- */
+/* Repaint the lower part of a shape. `below` is where the change happens and
+   `fade` how much of a gradient it gets - nearly none, because the whole point
+   of the light ramp is that this picture is made of flat areas with edges
+   between them, and a soft airbrushed belly would be the one thing in the
+   scene that is not. */
+function underside(geo, hex, below, fade) {
+  const pos = geo.attributes.position, col = geo.attributes.color;
+  const c = new THREE.Color(hex);
+  const f = fade || 1;
+  for (let i = 0; i < pos.count; i++) {
+    const t = Math.min(1, Math.max(0, (below - pos.getY(i)) / f));
+    if (t <= 0) continue;
+    col.setXYZ(i,
+      col.getX(i) + (c.r - col.getX(i)) * t,
+      col.getY(i) + (c.g - col.getY(i)) * t,
+      col.getZ(i) + (c.b - col.getZ(i)) * t);
+  }
+  return geo;
+}
+
+function quadRig(s) {
+  const L = s.body.len, W = s.width;
+  const fr = s.legF, bk = s.legB;
+  const rows = [
+    ['spine', 'root', 0, s.stand, 0],
+    ['chest', 'spine', L * .36, s.chestUp || 0, 0],
+    ['rump', 'spine', -L * .30, s.rumpUp || 0, 0],
+    ['neck', 'chest', s.neck.f, s.neck.up, 0],
+    ['head', 'neck', s.neck.len, s.neck.rise || 0, 0],
+    ['tail', 'rump', -s.tail.f, s.tail.up, 0],
+    ['tailTip', 'tail', -s.tail.len * .55, 0, 0]
+  ];
+  for (const side of ['L', 'R']) {
+    const z = (side === 'L' ? -1 : 1) * W;
+    rows.push(
+      ['shoulder' + side, 'chest', 0, -(s.chestDrop || 0), z],
+      ['kneeF' + side, 'shoulder' + side, 0, -fr[0], 0],
+      ['ankleF' + side, 'kneeF' + side, 0, -fr[1], 0],
+      ['hip' + side, 'rump', 0, -(s.rumpDrop || 0), z],
+      ['kneeB' + side, 'hip' + side, 0, -bk[0], 0],
+      ['ankleB' + side, 'kneeB' + side, 0, -bk[1], 0]
+    );
+  }
+  return rows;
+}
+
+export function buildBeast(s) {
+  const j = makeRig(quadRig(s));
+  const mat = figureMat();
+  const C = s.col;
+  const L = s.body.len;
+
+  /* THE BODY, laid along the way it faces. One shape: a barrel is a barrel
+     whether it belongs to a bear or a hare, and what makes it one or the other
+     is the profile, which is the sheet's. */
+  const barrel = at(alongX(spindle(s.body.prof, C.coat, s.body.seg || 18)), -L / 2, 0, 0);
+  /* The pale belly is REPAINTED ONTO the barrel rather than being a second
+     shape tucked under it. Tucked under, it was a squashed ball that mostly
+     hid inside the body and showed as a grey patch in the middle of the fox.
+     Repainting costs no geometry at all, cannot poke through anything, and
+     gives the hard line along the flank that a drawing would give it. */
+  if (C.belly !== undefined) underside(barrel, C.belly, -s.body.deep * .46, s.body.deep * .26);
+  attach(j.spine, [barrel], mat);
+
+  /* THE NECK, aimed from the chest at wherever the head has been put. Built
+     along +x and then turned to point at it, so a sheet can raise a head
+     without also having to work out the angle of the neck below it. */
+  {
+    const rise = s.neck.rise || 0, run = s.neck.len;
+    const n = alongX(spindle(
+      [[0, -2], [s.neck.r * .92, 1], [s.neck.r, run * .5], [s.neck.r * .88, Math.hypot(run, rise) + 2]],
+      C.coat, 14));
+    n.rotateZ(Math.atan2(rise, run));
+    attach(j.neck, [n], mat);
+  }
+
+  /* THE HEAD. Also a spindle: a muzzle is exactly a body profile, shorter.
+     Ears, eyes and whatever it has instead of a nose go on top of it, and the
+     whole head is merged into one mesh so the line goes round the head rather
+     than round each ear. */
+  /* Sat ON the head joint rather than hung forward off it, so the joint lands
+     roughly behind the eyes. Everything else on the head - ears, eyes, nose -
+     is then placed against the head's own middle, which is how you would
+     describe it out loud. */
+  const H = s.head;
+  const head = [at(alongX(spindle(H.prof, C.coat, H.seg || 16)), -H.len * .45, 0, 0)];
+
+  if (C.muzzle !== undefined && H.muzzleAt) {
+    const m = new THREE.SphereGeometry(1, 14, 10);
+    m.scale(H.muzzleAt[3], H.muzzleAt[4], H.muzzleAt[4]);
+    m.translate(H.muzzleAt[0], H.muzzleAt[1], 0);
+    head.push(paint(m, C.muzzle));
+  }
+  if (H.nose) {
+    const n = new THREE.SphereGeometry(H.nose[3], 10, 8);
+    n.scale(.9, .8, 1.05);
+    head.push(at(paint(n, C.nose === undefined ? 0x241c1a : C.nose), H.nose[0], H.nose[1], 0));
+  }
+  for (const side of [-1, 1]) {
+    if (H.eye) {
+      const e = new THREE.SphereGeometry(H.eye[3], 10, 8);
+      e.scale(.8, 1, 1);
+      head.push(at(paint(e, C.eye), H.eye[0], H.eye[1], side * H.eye[2]));
+    }
+    if (s.ears) head.push(...earGeometry(s.ears, C, side));
+    if (s.horns) head.push(...hornGeometry(s.horns, C, side));
+  }
+  attach(j.head, head, mat);
+
+  // THE LEGS. Same bones as his, in a different arrangement four times over.
+  for (const side of ['L', 'R']) {
+    const fr = s.legF, bk = s.legB;
+    attach(j['shoulder' + side], [bone(fr[0], fr[2], fr[3], C.coat, { capScale: 1.0 })], mat);
+    attach(j['kneeF' + side], [bone(fr[1], fr[3], fr[3] * .88, C.leg === undefined ? C.coat : C.leg, { foot: false })], mat);
+    attach(j['ankleF' + side], [pawGeometry(s.paw, C)], mat);
+    attach(j['hip' + side], [bone(bk[0], bk[2], bk[3], C.coat, { capScale: 1.08 })], mat);
+    attach(j['kneeB' + side], [bone(bk[1], bk[3], bk[3] * .88, C.leg === undefined ? C.coat : C.leg, { foot: false })], mat);
+    attach(j['ankleB' + side], [pawGeometry(s.paw, C)], mat);
+  }
+
+  // THE TAIL, in two lengths so it can hang and curl rather than stick out.
+  if (s.tail.len > 0) {
+    const tc = C.tail === undefined ? C.coat : C.tail;
+    attach(j.tail, [alongNegX(spindle(
+      [[0, -1], [s.tail.r, 0], [s.tail.r * .9, s.tail.len * .55]], tc, 10))], mat);
+    attach(j.tailTip, [alongNegX(spindle(
+      [[s.tail.r * .9, 0], [s.tail.r * (s.tail.tuft || .6), s.tail.len * .30], [0, s.tail.len * .48]],
+      tc, 10))], mat);
+    j.tail.rotation.z = s.tail.droop || 0;
+    j.tailTip.rotation.z = s.tail.curl || 0;
+  }
+
+  /* STANDING. Left alone, all four legs are vertical poles and the animal
+     reads as a table. A real one is a zigzag: the back leg especially, where
+     the thigh goes down-and-forward and the hock comes back under it again.
+     That zigzag is most of what separates a hound from a sheep, so a sheet can
+     override it, and the numbers below are only the usual answer. */
+  const pf = s.poseF || [.12, -.20], pb = s.poseB || [.30, -.52];
+  for (const side of ['L', 'R']) {
+    j['shoulder' + side].rotation.z = pf[0];
+    j['kneeF' + side].rotation.z = pf[1];
+    j['hip' + side].rotation.z = pb[0];
+    j['kneeB' + side].rotation.z = pb[1];
+    // and the paw sits flat however the leg above it is angled
+    j['ankleF' + side].rotation.z = -(pf[0] + pf[1]);
+    j['ankleB' + side].rotation.z = -(pb[0] + pb[1]);
+  }
+
+  // Whatever else this one has: a hedgehog's spines, a golem's cracks.
+  if (s.extra) s.extra(j, mat, C, s);
+
+  /* `eyes` is empty on purpose. A beast's eyes are merged into its head, so
+     there is nothing separate to pulse - but the renderer walks this list for
+     every monster, and an absent list is a crash rather than a still eye. */
+  j.root.userData = {
+    rig: j, eyes: [], height: s.stand + s.neck.up + (s.neck.rise || 0) + 12,
+    legs: [j.shoulderL, j.shoulderR], backLegs: [j.hipL, j.hipR],
+    knees: [j.kneeFL, j.kneeFR], backKnees: [j.kneeBL, j.kneeBR],
+    head: j.head, tail: j.tail, tailTip: j.tailTip
+  };
+  if (s.scale && s.scale !== 1) j.root.scale.setScalar(s.scale);
+  return inkGroup(j.root);
+}
+
+/* Ears. Four shapes between them cover every animal in the game: a wolf's
+   point, a bear's round, a hare's long, and a cat's point set wide. */
+function earGeometry(e, C, side) {
+  const col = C.ear === undefined ? C.coat : C.ear;
+  const out = [];
+  const z = side * e.at[2];
+  if (e.type === 'round') {
+    const g = new THREE.SphereGeometry(e.r, 12, 9);
+    g.scale(.55, 1, 1);
+    out.push(at(paint(g, col), e.at[0], e.at[1], z));
+  } else {
+    // pointed and long are the same shape at different lengths
+    const g = spindle([[0, 0], [e.r, e.len * .30], [e.r * .72, e.len * .72], [0, e.len]], col, 10);
+    g.scale(.62, 1, 1);
+    g.rotateX(side * (e.flare === undefined ? .34 : e.flare));
+    g.rotateZ(e.lean === undefined ? -.18 : e.lean);
+    out.push(at(g, e.at[0], e.at[1], z));
+    if (C.earIn !== undefined) {
+      const i = spindle([[0, 0], [e.r * .55, e.len * .30], [0, e.len * .78]], C.earIn, 8);
+      i.scale(.5, 1, 1);
+      i.rotateX(side * (e.flare === undefined ? .34 : e.flare));
+      i.rotateZ(e.lean === undefined ? -.18 : e.lean);
+      out.push(at(i, e.at[0] + .5, e.at[1], z));
+    }
+  }
+  return out;
+}
+
+function hornGeometry(h, C, side) {
+  const col = C.horn === undefined ? 0xcfc3ae : C.horn;
+  const g = spindle([[0, 0], [h.r, h.len * .22], [h.r * .62, h.len * .66], [0, h.len]], col, 9);
+  g.rotateZ(side * 0);
+  g.rotateX(side * (h.flare === undefined ? .9 : h.flare));
+  g.rotateZ(h.lean === undefined ? .2 : h.lean);
+  return [at(g, h.at[0], h.at[1], side * h.at[2])];
+}
+
+/* A paw. Small, but it is where the animal meets the ground and a leg that
+   ends in nothing reads as a stick pushed into the earth. */
+function pawGeometry(p, C) {
+  if (!p) return null;
+  const col = C.paw === undefined ? (C.leg === undefined ? C.coat : C.leg) : C.paw;
+  const g = new THREE.SphereGeometry(p.r || 3.4, 12, 9);
+  g.scale(1.5, .62, .92);
+  g.translate((p.r || 3.4) * .35, -(p.drop === undefined ? 2.2 : p.drop), 0);
+  return paint(g, col);
+}
+
+/* ---------------------------------------------------------------------------
+   THE SHEETS
+
+   One row per animal. Everything in here is a number or a colour - there is no
+   code, and adding an animal adds no code either.
+
+   `body.prof` and `head.prof` are outlines: pairs of (how wide, how far along),
+   running nose-ward, starting and ending at nothing. They are the animal. A
+   bear's barrel is widest a third of the way along and stays wide; a fox's
+   tapers away at both ends; a bull carries its bulk at the shoulder.
+
+   The leg pairs are [upper, lower, top radius, bottom radius], and they are
+   what make a hare a hare: its back legs are half again its front ones, and
+   nothing else about it has to change to say so.
+--------------------------------------------------------------------------- */
+export const BEASTS = {
+  bramblebear: {
+    stand: 34, width: 9.5, chestDrop: 6, rumpDrop: 6,
+    body: { len: 58, deep: 14, prof: [[0, 0], [6, 2], [11, 9], [13.5, 20], [13, 34], [11, 46], [7, 54], [0, 58]] },
+    legF: [13, 11, 4.4, 3.6], legB: [14, 10, 4.8, 3.8],
+    neck: { f: 4, up: 5, len: 8, r: 4.8, rise: 4 },
+    head: { len: 19, prof: [[0, 0], [5, 2], [7, 6], [6.5, 11], [5, 16], [0, 19]],
+            muzzleAt: [4, -1.4, 0, 5.5, 3.4], nose: [8.4, -1.0, 0, 1.5], eye: [3.0, 2.2, 3.4, 1.15] },
+    ears: { type: 'round', r: 3.2, at: [-3.5, 5.2, 4.4] },
+    tail: { f: 2, up: 3, len: 7, r: 1.8, droop: .5 },
+    paw: { r: 3.8, drop: 1.6 },
+    col: { coat: 0x5b4636, belly: 0x46362a, muzzle: 0x6e5844, ear: 0x46362a, eye: 0xf1d36a, paw: 0x35291f }
+  },
+
+  shadehound: {
+    stand: 32, width: 8, chestDrop: 5, rumpDrop: 5,
+    body: { len: 52, deep: 10, prof: [[0, 0], [4, 2], [8, 8], [9.5, 18], [9, 30], [8.5, 42], [6, 49], [0, 52]] },
+    legF: [13, 10, 3.6, 2.8], legB: [14, 9, 4.0, 3.0],
+    neck: { f: 4, up: 5, len: 8, r: 3.6, rise: 4 },
+    head: { len: 21, prof: [[0, 0], [4.5, 2], [6.2, 6], [4.8, 12], [3.4, 18], [0, 21]],
+            nose: [9.6, -.6, 0, 1.3], eye: [2.4, 2.0, 2.8, 1.0] },
+    ears: { type: 'point', r: 2.6, len: 7.5, at: [-2.6, 5.0, 3.4], flare: .40 },
+    tail: { f: 2, up: 2, len: 14, r: 1.9, tuft: .8, droop: .9, curl: .4 },
+    paw: { r: 3.0, drop: 1.4 },
+    col: { coat: 0x4a4458, belly: 0x393447, muzzle: 0x565066, ear: 0x2f2b3c, earIn: 0x6a5f7e,
+           eye: 0xf1d36a, paw: 0x2a2634, tail: 0x413b52 }
+  },
+
+  nightfox: {
+    stand: 24, width: 6, chestDrop: 4, rumpDrop: 4,
+    body: { len: 40, deep: 7.5, prof: [[0, 0], [3, 1.5], [5.5, 6], [7, 14], [6.5, 24], [6, 32], [4.5, 37], [0, 40]] },
+    legF: [9, 7, 2.6, 2.0], legB: [10, 6, 2.8, 2.1],
+    neck: { f: 3, up: 4, len: 5.5, r: 2.7, rise: 3 },
+    head: { len: 16, prof: [[0, 0], [3.6, 1.5], [5, 5], [3.4, 10], [2.2, 14], [0, 16]],
+            nose: [7.2, -.4, 0, 1.0], eye: [1.8, 1.6, 2.2, .85] },
+    ears: { type: 'point', r: 2.4, len: 7, at: [-1.8, 3.8, 2.6], flare: .34 },
+    tail: { f: 1, up: 1.5, len: 20, r: 2.6, tuft: 1.05, droop: .5, curl: .3 },
+    paw: { r: 2.2, drop: 1.0 },
+    col: { coat: 0x8a4a2e, belly: 0xd8c7ad, muzzle: 0xd8c7ad, ear: 0x2a1d16, earIn: 0xc99c78,
+           eye: 0xf1d36a, paw: 0x2a1d16, tail: 0x9a5636 }
+  },
+
+  dusthare: {
+    stand: 24, width: 5.5, chestDrop: 4, rumpDrop: 3,
+    body: { len: 34, deep: 9, prof: [[0, 0], [4, 1.5], [8, 6], [9, 14], [8, 22], [6, 29], [4, 32], [0, 34]] },
+    legF: [8, 8, 2.4, 1.9], legB: [11, 6, 3.6, 2.4],
+    neck: { f: 2, up: 4, len: 4, r: 2.6, rise: 3.5 },
+    head: { len: 14, prof: [[0, 0], [3.6, 1.5], [4.8, 5], [4, 9], [2.6, 12], [0, 14]],
+            nose: [6.2, -.4, 0, .9], eye: [1.4, 1.8, 2.6, .9] },
+    // The one feature nobody could mistake. Long, and leaning back.
+    ears: { type: 'long', r: 2.0, len: 15, at: [-1.4, 3.6, 2.0], flare: .22, lean: -.55 },
+    tail: { f: 1, up: 2, len: 4, r: 2.4, tuft: 1.0, droop: -.3 },
+    paw: { r: 2.4, drop: 1.0 },
+    col: { coat: 0xb9a184, belly: 0xe2d6c0, muzzle: 0xd6c6ad, ear: 0x8d7a62, earIn: 0xd3a9a0,
+           eye: 0x2b2118, paw: 0x9a856b }
+  },
+
+  thistlebull: {
+    stand: 40, width: 11, chestDrop: 8, rumpDrop: 8,
+    body: { len: 62, deep: 16, prof: [[0, 0], [6, 2], [12, 10], [14, 24], [15.5, 40], [14, 52], [9, 59], [0, 62]] },
+    legF: [15, 13, 5.0, 4.0], legB: [16, 12, 5.2, 4.0],
+    neck: { f: 5, up: 3, len: 7, r: 6.2, rise: 1 },
+    head: { len: 20, prof: [[0, 0], [6, 2], [7.5, 7], [7, 13], [6, 18], [0, 20]],
+            muzzleAt: [5, -2.0, 0, 5.0, 3.6], nose: [8.6, -1.6, 0, 1.6], eye: [2.0, 2.6, 4.6, 1.2] },
+    ears: { type: 'point', r: 2.2, len: 5.5, at: [-1.0, 3.0, 6.2], flare: 1.25, lean: 0 },
+    horns: { r: 2.4, len: 13, at: [-0.5, 5.4, 4.6], flare: 1.05, lean: .35 },
+    tail: { f: 2, up: 3, len: 16, r: 1.8, tuft: 1.4, droop: 1.0, curl: .3 },
+    paw: { r: 4.2, drop: 1.8 },
+    col: { coat: 0x5e4a52, belly: 0x4a3a41, muzzle: 0x8a7a70, ear: 0x4a3a41,
+           eye: 0xf1d36a, horn: 0xd8cbb2, paw: 0x2e2429, tail: 0x4a3a41 }
+  },
+
+  thornback: {
+    stand: 16, width: 5, chestDrop: 3, rumpDrop: 3,
+    body: { len: 30, deep: 11, prof: [[0, 0], [5, 1.5], [9, 5], [11, 13], [10.5, 20], [7, 26], [4, 28], [0, 30]] },
+    legF: [5, 5, 1.8, 1.5], legB: [6, 4, 2.0, 1.6],
+    neck: { f: 2, up: 2, len: 3, r: 2.1, rise: 1.5 },
+    head: { len: 13, prof: [[0, 0], [3.4, 1.5], [4.4, 4], [3, 8], [1.8, 11], [0, 13]],
+            nose: [5.8, -.4, 0, .9], eye: [1.2, 1.4, 2.0, .75] },
+    ears: { type: 'round', r: 1.5, at: [-1.6, 2.6, 2.2] },
+    tail: { f: 1, up: 1, len: 2.5, r: 1.2 },
+    paw: { r: 1.8, drop: .8 },
+    col: { coat: 0x9a8468, belly: 0xc4b295, muzzle: 0xc4b295, ear: 0x7a6650,
+           eye: 0x2b2118, paw: 0x7a6650 },
+    // and the thing it is named for
+    extra: (j, mat, C, s) => attach(j.spine, spikes(s, 0x3f3428), mat)
+  },
+
+  stonepup: {
+    stand: 18, width: 5, chestDrop: 3, rumpDrop: 3,
+    body: { len: 26, deep: 8, prof: [[0, 0], [4, 1], [7, 4], [8, 10], [7.5, 16], [6, 21], [4, 24], [0, 26]] },
+    legF: [6, 5, 2.6, 2.2], legB: [7, 4, 2.8, 2.3],
+    neck: { f: 2, up: 3, len: 3, r: 2.8, rise: 2 },
+    head: { len: 14, prof: [[0, 0], [4.5, 2], [6, 5], [5, 10], [3.4, 13], [0, 14]],
+            muzzleAt: [3.2, -1.2, 0, 3.6, 2.4], nose: [6.4, -.8, 0, 1.2], eye: [2.0, 1.8, 2.8, 1.0] },
+    ears: { type: 'point', r: 2.2, len: 5, at: [-1.6, 3.4, 2.6], flare: .5, lean: -.3 },
+    tail: { f: 1, up: 2, len: 5, r: 1.8, droop: .6 },
+    paw: { r: 2.4, drop: 1.0 },
+    col: { coat: 0x8f96a2, belly: 0xa4abb6, muzzle: 0x9ea5b1, ear: 0x767d89,
+           eye: 0x9fd8ff, paw: 0x676e79 }
+  },
+
+  glimmercat: {
+    stand: 22, width: 5, chestDrop: 4, rumpDrop: 4,
+    body: { len: 34, deep: 7, prof: [[0, 0], [3, 1], [5.5, 5], [6.8, 12], [6.5, 20], [6, 27], [4.5, 31], [0, 34]] },
+    legF: [8, 6, 2.2, 1.8], legB: [9, 5, 2.4, 1.9],
+    neck: { f: 2, up: 4, len: 4, r: 2.4, rise: 2.5 },
+    head: { len: 13, prof: [[0, 0], [4.2, 1.5], [5.4, 4.5], [4.4, 9], [3, 11.5], [0, 13]],
+            nose: [5.8, -.2, 0, .8], eye: [1.6, 1.6, 2.4, 1.0] },
+    ears: { type: 'point', r: 2.4, len: 5.5, at: [-1.4, 3.6, 2.4], flare: .42, lean: -.1 },
+    tail: { f: 1, up: 3, len: 22, r: 1.4, tuft: 1.1, droop: 1.5, curl: .7 },
+    paw: { r: 2.0, drop: .9 },
+    col: { coat: 0x7a63a8, belly: 0x9584c4, muzzle: 0x9584c4, ear: 0x53437a, earIn: 0xc9a9e8,
+           eye: 0xbff0a0, paw: 0x53437a, tail: 0x8f78bd }
+  }
+};
+
+/* A hedgehog's back. Spines laid in rows over the barrel, each one leaning the
+   way the back falls away, so the silhouette is a bank of points rather than a
+   lump with texture on it. They are merged into one shape - there are sixty of
+   them and every separate shape is another thing to draw. */
+function spikes(s, dark) {
+  const out = [], L = s.body.len, prof = s.body.prof;
+  const widest = prof.reduce((a, p) => Math.max(a, p[0]), 0);
+  for (let row = 0; row < 7; row++) {
+    const along = .16 + row * .115;                 // where down the back this row sits
+    const x = -L / 2 + along * L;
+    // how fat the body is here, read straight off its own outline
+    let r = 0;
+    for (let i = 1; i < prof.length; i++) {
+      const a = prof[i - 1], b = prof[i], y = along * L;
+      if (y >= a[1] && y <= b[1]) { const t = (y - a[1]) / ((b[1] - a[1]) || 1); r = a[0] + (b[0] - a[0]) * t; break; }
+    }
+    if (!r) r = widest * .8;
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const a = -1.15 + (i / (n - 1)) * 2.30;       // across the back, not down the sides
+      const len = 7.5 * (.72 + .28 * Math.cos(a)) * (1 - Math.abs(along - .45));
+      const g = spindle([[0, 0], [1.25, len * .22], [.7, len * .66], [0, len]], dark, 7);
+      // lean it back and outward, the way a real spine lies
+      g.rotateZ(.55);            // leaning back toward the tail
+      g.rotateX(a * .78);
+      out.push(at(g, x, Math.cos(a) * r * .86, Math.sin(a) * r * .96));
+    }
+  }
+  return [mergeGeometries(out)];
+}
+
+/* ---------------------------------------------------------------------------
    THE REST, FOR NOW
 
    The creatures, the monsters and the critters are still the shapes they were.
@@ -550,7 +978,26 @@ const CREATURE_COLOUR = {
 };
 const solid = (c, opts) => lit(Object.assign({ color: c, roughness: .85 }, opts || {}));
 
-export function buildCreature(kind) {
+/* A creature or a monster is looked up by its id. If it has a sheet it is
+   drawn from the sheet; if it does not, it falls back to the two-spheres-and-
+   horns shape everything used to be, so a half-finished bestiary still runs.
+   The viewer says which is which, so it is obvious what is left. */
+export function buildCreature(c) {
+  const id = typeof c === 'string' ? null : c && c.id;
+  const sheet = id && BEASTS[id];
+  if (sheet) {
+    const g = buildBeast(sheet);
+    // Creatures carry a light above them; it is how you spot one at night.
+    const spark = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4, 0), glow(0xffffff, 2.2));
+    spark.position.y = g.userData.height + 14;
+    g.add(spark);
+    g.userData.spark = spark;
+    return g;
+  }
+  return blobCreature(typeof c === 'string' ? c : (c && c.kind));
+}
+
+function blobCreature(kind) {
   const col = CREATURE_COLOUR[kind] || 0xd7b65e;
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.SphereGeometry(10, 10, 8), solid(col));
@@ -575,7 +1022,14 @@ export function buildCreature(kind) {
   return inkGroup(g);
 }
 
-export function buildMonster(boss) {
+export function buildMonster(m) {
+  const boss = m === true || !!(m && m.boss);
+  const sheet = m && m.id && BEASTS[m.id];
+  if (sheet) return buildBeast(sheet);
+  return blobMonster(boss);
+}
+
+function blobMonster(boss) {
   const g = new THREE.Group();
   const dark = boss ? 0x3b3560 : 0x6a3f58, light = boss ? 0x4d4680 : 0x7e4b67;
   const body = new THREE.Mesh(new THREE.SphereGeometry(17, 10, 8), solid(dark));
@@ -647,18 +1101,37 @@ export function buildCritter(kind) {
    here rather than in the page, because when a figure is added it should turn
    up in the viewer without anybody having to remember a second place.
 --------------------------------------------------------------------------- */
+/* The cast, in the order it is worth looking at: him and Luna, then the six
+   creatures, then the sixteen monsters, then the small wildlife. The names and
+   ids are the game's own - if a monster is added to index.html and given a
+   sheet here, it turns up in the viewer without anybody remembering to add it
+   in a second place. `note` says whether it has been drawn yet, so it is never
+   a mystery which of these are finished. */
+const CREATURE_LIST = [
+  ['mossling', 'Mossling', 'forest'], ['brookfin', 'Brookfin', 'water'],
+  ['sunmoth', 'Sunmoth', 'sky'], ['larkspark', 'Larkspark', 'spark'],
+  ['stonepup', 'Stonepup', 'stone'], ['glimmercat', 'Glimmercat', 'magic']
+];
+const MONSTER_LIST = [
+  ['thornback', 'Thornback'], ['bramblebear', 'Bramblebear'], ['bogling', 'Bogling'],
+  ['owlshade', 'Owl Shade'], ['shadowbat', 'Shadow Bat'], ['dusthare', 'Dust Hare'],
+  ['dustdevil', 'Dust Devil'], ['thistlebull', 'Thistle Bull'], ['scarecrow', 'Old Scarecrow'],
+  ['haywraith', 'Hay Wraith'], ['golem', 'Stone Golem'], ['tombbeetle', 'Tomb Beetle'],
+  ['rubblecrab', 'Rubble Crab'], ['shadehound', 'Shade Hound'], ['nightfox', 'Night Fox'],
+  ['guardian', 'Gate Guardian', true]
+];
+const drawn = id => BEASTS[id] ? 'drawn from its own sheet' : 'not yet drawn — still the old shape';
+
 export const FIGURES = [
   { id: 'player', name: 'The Wanderer', note: 'rebuilt on the kit', make: () => buildPlayer() },
   { id: 'luna', name: 'Luna', note: 'rebuilt on the kit', make: () => buildLuna() },
-  { id: 'mossling', name: 'Mossling', note: 'not yet rebuilt', make: () => buildCreature('forest') },
-  { id: 'brookfin', name: 'Brookfin', note: 'not yet rebuilt', make: () => buildCreature('water') },
-  { id: 'sunmoth', name: 'Sunmoth', note: 'not yet rebuilt', make: () => buildCreature('sky') },
-  { id: 'larkspark', name: 'Larkspark', note: 'not yet rebuilt', make: () => buildCreature('spark') },
-  { id: 'stonepup', name: 'Stonepup', note: 'not yet rebuilt', make: () => buildCreature('stone') },
-  { id: 'glimmercat', name: 'Glimmercat', note: 'not yet rebuilt', make: () => buildCreature('magic') },
-  { id: 'monster', name: 'Monster', note: 'not yet rebuilt', make: () => buildMonster(false) },
-  { id: 'guardian', name: 'Gate Guardian', note: 'not yet rebuilt', make: () => buildMonster(true) },
-  { id: 'frog', name: 'Frog', note: 'not yet rebuilt', make: () => buildCritter('frog') },
-  { id: 'rabbit', name: 'Rabbit', note: 'not yet rebuilt', make: () => buildCritter('rabbit') },
-  { id: 'bat', name: 'Bat', note: 'not yet rebuilt', make: () => buildCritter('bat') }
+  ...CREATURE_LIST.map(([id, name, kind]) => ({
+    id, name: name + ' (creature)', note: drawn(id), make: () => buildCreature({ id, kind })
+  })),
+  ...MONSTER_LIST.map(([id, name, boss]) => ({
+    id, name, note: drawn(id), make: () => buildMonster({ id, boss: !!boss })
+  })),
+  { id: 'frog', name: 'Frog', note: 'not yet drawn', make: () => buildCritter('frog') },
+  { id: 'rabbit', name: 'Rabbit', note: 'not yet drawn', make: () => buildCritter('rabbit') },
+  { id: 'bat', name: 'Bat', note: 'not yet drawn', make: () => buildCritter('bat') }
 ];

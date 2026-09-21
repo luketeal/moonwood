@@ -183,7 +183,14 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 /* ---------------------------------------------------------------------------
    THE CAST
 --------------------------------------------------------------------------- */
+/* Two groups, not one. `holder` turns, and `centrer` inside it shifts the
+   figure so that whatever point we want to look at sits exactly on the axis
+   holder turns about. Done the other way round - shifting the turning group -
+   the figure orbits the middle of the picture instead of spinning on the spot,
+   which a hound with a long tail does very visibly. */
 const holder = new THREE.Group();
+const centrer = new THREE.Group();
+holder.add(centrer);
 scene.add(holder);
 
 const pick = document.getElementById('pick');
@@ -200,20 +207,27 @@ function show(i) {
   idx = (i + FIGURES.length) % FIGURES.length;
   const f = FIGURES[idx];
   if (current) {
-    holder.remove(current);
+    centrer.remove(current);
     current.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
   }
   current = f.make();
   current.traverse(o => { if (o.isMesh && !o.userData.isInk) o.castShadow = true; });
-  holder.add(current);
+  centrer.add(current);
   rig = current.userData && current.userData.rig;
 
-  // Frame whatever it is: look at the middle of it and stand back enough to
-  // see all of it, so a bat and the Guardian are both worth looking at.
+  /* Frame whatever it is. Measured on its LONGEST side, not its height: a
+     hound is half again as long as it is tall, and framed on height it walked
+     out of both edges of the picture. */
   const box = new THREE.Box3().setFromObject(current);
-  const h = Math.max(12, box.max.y - Math.min(0, box.min.y));
-  cam.target = h * 0.52;
-  cam.dist = h * 2.4;
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const reach = Math.max(12, size.x, size.y, size.z);
+  cam.target = box.min.y + size.y * 0.55;
+  cam.dist = reach * 2.4;
+  /* The turntable spins the figure about the scene's up axis, so it has to be
+     looked at from the axis it spins about - centred in x and z, or a long
+     animal swings in and out of frame as it goes round. */
+  centrer.position.set(-(box.min.x + size.x / 2), 0, -(box.min.z + size.z / 2));
   HOME.target = cam.target; HOME.dist = cam.dist;
 
   document.getElementById('nm').textContent = f.name;

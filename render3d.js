@@ -821,13 +821,13 @@ export function createRenderer(canvas, opts) {
     A.creatures = {}; A.monsters = {}; A.critters = []; A.shards = {}; A.finds = {}; A.berries = {};
 
     for (const c of L.creatures) {
-      const g = F.buildCreature(c.kind);
+      const g = F.buildCreature(c);
       W.setPos(g, c.x, c.y, h(c.x, c.y));
       g.rotation.y = (c.x % 6.283);
       land.root.add(g); A.creatures[c.id] = g;
     }
     for (const m of L.monsters) {
-      const g = F.buildMonster(false);
+      const g = F.buildMonster(m);
       W.setPos(g, m.x, m.y, h(m.x, m.y));
       g.rotation.y = (m.x % 6.283);
       land.root.add(g); A.monsters[m.id] = g;
@@ -1118,13 +1118,13 @@ export function createRenderer(canvas, opts) {
       g.position.y = gh(m.x, m.y) + Math.sin(t * 1.9 + m.x) * 2.5;
       turnToward(g, m, s.p, (s.battle && s.battle.m === m) ? 1e9 : 340, s.dt || 1);
       const pulse = .7 + Math.sin(t * 4 + m.x) * .3;
-      for (const e of g.userData.eyes) e.scale.setScalar(pulse);
+      for (const e of g.userData.eyes || []) e.scale.setScalar(pulse);
     }
 
     // The Guardian, which only exists once it has been woken.
     if (s.battle && s.battle.m.boss) {
       const m = s.battle.m;
-      if (!A.boss) { A.boss = F.buildMonster(true); land.root.add(A.boss); }
+      if (!A.boss) { A.boss = F.buildMonster(m); land.root.add(A.boss); }
       A.boss.visible = true;
       A.boss.position.set(m.x, gh(m.x, m.y) + Math.sin(t * 1.4) * 4, m.y);
       turnToward(A.boss, m, s.p, 1e9, s.dt || 1);
