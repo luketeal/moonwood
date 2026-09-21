@@ -246,9 +246,15 @@ export function alongNegX(geo) { geo.rotateZ(Math.PI / 2); return geo; }
 --------------------------------------------------------------------------- */
 export function panel(pts, thick, colour, opts) {
   const o = opts || {};
-  const curve = new THREE.CatmullRomCurve3(
-    pts.map(([x, y]) => new THREE.Vector3(x, y, 0)), true, 'centripetal');
-  const fine = curve.getPoints(Math.max(28, pts.length * 5));
+  /* A wing wants smoothing and a fin does not. Run through a curve, every
+     corner of a fin rounds off and the whole thing comes out as a paddle -
+     and a fish is nothing but corners: the notch in its tail, the point of
+     its dorsal. `sharp` uses the drawn points as drawn. */
+  const fine = o.sharp
+    ? pts.map(([x, y]) => new THREE.Vector3(x, y, 0))
+    : new THREE.CatmullRomCurve3(
+        pts.map(([x, y]) => new THREE.Vector3(x, y, 0)), true, 'centripetal')
+        .getPoints(Math.max(28, pts.length * 5));
   const shape = new THREE.Shape();
   shape.moveTo(fine[0].x, fine[0].y);
   for (let i = 1; i < fine.length; i++) shape.lineTo(fine[i].x, fine[i].y);
@@ -709,6 +715,9 @@ export function buildBeast(s) {
      whether it belongs to a bear or a hare, and what makes it one or the other
      is the profile, which is the sheet's. */
   const barrel = at(alongX(spindle(s.body.prof, C.coat, s.body.seg || 18)), -L / 2, 0, 0);
+  /* A body need not be round in section. A frog is wider than it is deep and
+     a fish is the other way about, and both are the same outline pressed. */
+  if (s.body.flat || s.body.wide) barrel.scale(1, s.body.flat || 1, s.body.wide || 1);
   /* The pale belly is REPAINTED ONTO the barrel rather than being a second
      shape tucked under it. Tucked under, it was a squashed ball that mostly
      hid inside the body and showed as a grey patch in the middle of the fox.
@@ -799,7 +808,9 @@ export function buildBeast(s) {
    differ in their numbers and not at all in their parts. */
 function animalHead(s, C) {
   const H = s.head;
-  const out = [at(alongX(spindle(H.prof, C.coat, H.seg || 16)), -H.len * .45, 0, 0)];
+  const skull = alongX(spindle(H.prof, C.coat, H.seg || 16));
+  if (H.flat || H.wide) skull.scale(1, H.flat || 1, H.wide || 1);
+  const out = [at(skull, -H.len * .45, 0, 0)];
 
   if (C.muzzle !== undefined && H.muzzleAt) {
     const m = new THREE.SphereGeometry(1, 14, 10);
@@ -902,6 +913,144 @@ function pawGeometry(p, C) {
   g.scale(1.5, .62, .92);
   g.translate((p.r || 3.4) * .35, -(p.drop === undefined ? 2.2 : p.drop), 0);
   return paint(g, col);
+}
+
+/* ---------------------------------------------------------------------------
+   THINGS WITH TOO MANY LEGS
+
+   A tomb beetle and a rubble crab. What makes something read as a bug is not
+   the shell - a shell is just a squashed body - it is the LEGS: a lot of them,
+   splayed out sideways and then bent back down, so the body is slung between
+   them rather than standing on top of them. Four legs under a body is a dog.
+   Six or eight out to the side is an insect, whatever else you do.
+
+   So each leg goes out from the body before it goes down, and the joint half
+   way along bends the other way. The sheet gives each PAIR its own splay and
+   its own length, because a crab's front legs are not its back ones.
+--------------------------------------------------------------------------- */
+function bugRig(s) {
+  const rows = [
+    ['body', 'root', 0, s.stand, 0],
+    ['head', 'body', s.head.at, s.head.up || 0, 0]
+  ];
+  s.legs.forEach((L, i) => {
+    for (const side of ['L', 'R']) {
+      const d = side === 'L' ? -1 : 1;
+      rows.push(
+        ['leg' + i + side, 'body', L[0], L[1], d * L[2]],
+        ['knee' + i + side, 'leg' + i + side, 0, -L[3], 0],
+        ['foot' + i + side, 'knee' + i + side, 0, -L[4], 0]
+      );
+    }
+  });
+  if (s.claw) for (const side of ['L', 'R']) {
+    const d = side === 'L' ? -1 : 1;
+    rows.push(
+      ['arm' + side, 'body', s.claw.at[0], s.claw.at[1], d * s.claw.at[2]],
+      ['pinch' + side, 'arm' + side, 0, -s.claw.upper, 0]
+    );
+  }
+  return rows;
+}
+
+export function buildBug(s) {
+  const j = makeRig(bugRig(s));
+  const mat = figureMat();
+  const C = s.col;
+
+  /* THE SHELL. A body spindle squashed flat and spread wide - a crab is the
+     same shape as a hound, pressed. The plates are cut into it with colour
+     rather than modelled, because at this size a raised plate is two hundred
+     triangles nobody will ever see the edge of. */
+  const shell = at(alongX(spindle(s.shell.prof, C.shell, s.shell.seg || 18)), -s.shell.len / 2, 0, 0);
+  shell.scale(1, s.shell.flat, s.shell.wide);
+  if (C.under !== undefined) underside(shell, C.under, -s.shell.deep * .12, s.shell.deep * .2);
+  if (s.shell.plates) plates(shell, s.shell.plates, s.shell.len);
+  attach(j.body, [shell], mat);
+
+  attach(j.head, animalHead(s, C), mat);
+
+  // Eyes on stalks, for the one that has them.
+  const eyes = [];
+  if (s.stalks) for (const side of [-1, 1]) {
+    const st = spindle([[0, 0], [s.stalks.r * .5, s.stalks.len * .5], [s.stalks.r, s.stalks.len]], C.shell, 8);
+    st.rotateZ(-.25);
+    st.rotateX(side * .30);
+    attach(j.head, [at(st, s.stalks.at[0], s.stalks.at[1], side * s.stalks.at[2])], mat);
+    const e = new THREE.Mesh(new THREE.SphereGeometry(s.stalks.r * 1.05, 10, 8), glow(C.glow || 0xf1d36a, 1.7));
+    e.position.set(s.stalks.at[0] + s.stalks.len * .26, s.stalks.at[1] + s.stalks.len * .92,
+      side * (s.stalks.at[2] + s.stalks.len * .28));
+    j.head.add(e);
+    eyes.push(e);
+  }
+
+  // THE LEGS, out then down.
+  s.legs.forEach((L, i) => {
+    const [, , , up, low, r, spread, bend] = L;
+    for (const side of ['L', 'R']) {
+      const d = side === 'L' ? -1 : 1, n = i + side;
+      attach(j['leg' + n], [bone(up, r, r * .8, C.leg, { capScale: 1.1, foot: false })], mat);
+      attach(j['knee' + n], [bone(low, r * .8, r * .42, C.leg, { foot: false })], mat);
+      attach(j['foot' + n], [paint(at((() => {
+        const t = new THREE.SphereGeometry(r * .5, 8, 6); t.scale(1.6, .5, 1); return t;
+      })(), r * .3, 0, 0), C.foot === undefined ? C.leg : C.foot)], mat);
+      j['leg' + n].rotation.x = d * spread;
+      j['leg' + n].rotation.z = bend || 0;
+      // and the joint half way bends the other way, putting the foot back down
+      j['knee' + n].rotation.x = -d * spread * 1.55;
+      j['knee' + n].rotation.z = -(bend || 0) * .5;
+    }
+  });
+
+  // THE CLAWS, for the one that has those.
+  if (s.claw) for (const side of ['L', 'R']) {
+    const d = side === 'L' ? -1 : 1;
+    attach(j['arm' + side], [bone(s.claw.upper, s.claw.r, s.claw.r * .8, C.leg, { capScale: 1.1, foot: false })], mat);
+    attach(j['pinch' + side], [pincer(s.claw, C.shell, d)], mat);
+    j['arm' + side].rotation.x = d * s.claw.spread;
+    j['arm' + side].rotation.z = s.claw.lift || 0;
+    j['pinch' + side].rotation.x = -d * s.claw.spread * .8;
+    j['pinch' + side].rotation.z = -(s.claw.lift || 0) - 1.25;   // held out in front
+  }
+
+  if (s.extra) s.extra(j, mat, C, s);
+
+  j.root.userData = { rig: j, eyes, height: s.stand + s.shell.deep * s.shell.flat + 6, head: j.head };
+  if (s.scale && s.scale !== 1) j.root.scale.setScalar(s.scale);
+  return inkGroup(j.root);
+}
+
+/* A pincer: a fat palm with a fixed lower jaw and a shorter upper one held
+   open above it. Two spindles and a squashed ball, and it reads instantly. */
+function pincer(c, colour, side) {
+  const out = [];
+  const palm = new THREE.SphereGeometry(c.pr, 12, 9);
+  palm.scale(1.5, 1, .7);
+  palm.translate(c.pr * .4, 0, 0);
+  out.push(paint(palm, colour));
+  const lower = alongX(spindle([[0, -1], [c.pr * .55, 0], [c.pr * .3, c.plen * .7], [0, c.plen]], colour, 8));
+  lower.rotateZ(-.10);
+  out.push(at(lower, c.pr * 1.1, -c.pr * .35, 0));
+  const upper = alongX(spindle([[0, -1], [c.pr * .45, 0], [c.pr * .24, c.plen * .6], [0, c.plen * .82]], colour, 8));
+  upper.rotateZ(.42);
+  out.push(at(upper, c.pr * 1.1, c.pr * .3, 0));
+  return mergeGeometries(out);
+}
+
+/* Score a shell into plates. The lines are drawn by darkening a narrow band of
+   corners, which costs nothing and lands wherever the shape already is -
+   unlike a modelled groove, which has to be cut somewhere and then stays cut
+   when the numbers around it change. */
+function plates(geo, cuts, len) {
+  const pos = geo.attributes.position, col = geo.attributes.color;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) + len / 2;            // distance from the tail end
+    let near = 9e9;
+    for (const t of cuts) near = Math.min(near, Math.abs(x - t * len));
+    if (near > 1.1) continue;
+    const k = 1 - near / 1.1;
+    col.setXYZ(i, col.getX(i) * (1 - k * .75), col.getY(i) * (1 - k * .75), col.getZ(i) * (1 - k * .75));
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1059,6 +1208,8 @@ export function buildFlier(s) {
   const C = s.col;
 
   const barrel = at(alongX(spindle(s.body.prof, C.coat, s.body.seg || 16)), -s.body.len / 2, 0, 0);
+  // A fish is a flier with the press the other way about: tall and narrow.
+  if (s.body.flat || s.body.wide) barrel.scale(1, s.body.flat || 1, s.body.wide || 1);
   if (C.belly !== undefined) underside(barrel, C.belly, -s.body.deep * .40, s.body.deep * .26);
   attach(j.body, [barrel], mat);
 
@@ -1076,8 +1227,8 @@ export function buildFlier(s) {
      than modelling it. */
   for (const side of ['L', 'R']) {
     const d = side === 'L' ? -1 : 1;
-    attach(j['wing' + side], [layFlat(panel(s.wing.inOutline, s.wing.thick, C.wing === undefined ? C.coat : C.wing), d)], mat);
-    attach(j['wingTip' + side], [layFlat(panel(s.wing.outOutline, s.wing.thick, C.wingTip === undefined ? (C.wing === undefined ? C.coat : C.wing) : C.wingTip), d)], mat);
+    attach(j['wing' + side], [layFlat(panel(s.wing.inOutline, s.wing.thick, C.wing === undefined ? C.coat : C.wing, s.wing.opts), d)], mat);
+    attach(j['wingTip' + side], [layFlat(panel(s.wing.outOutline, s.wing.thick, C.wingTip === undefined ? (C.wing === undefined ? C.coat : C.wing) : C.wingTip, s.wing.opts), d)], mat);
     // a second, smaller pair for the things that have four
     if (s.wing2) attach(j['wing2' + side], [layFlat(panel(s.wing2.outline, s.wing2.thick, C.wing2 === undefined ? C.wing : C.wing2), d)], mat);
     // Where they sit when nothing is driving them; `flapWings` adds to this.
@@ -1088,7 +1239,7 @@ export function buildFlier(s) {
 
   // THE TAIL - a fan on a bird, a rudder on a bat, nothing much on a moth.
   if (s.tail.outline) {
-    const t = panel(s.tail.outline, s.tail.thick || 1.2, C.tail === undefined ? C.coat : C.tail);
+    const t = panel(s.tail.outline, s.tail.thick || 1.2, C.tail === undefined ? C.coat : C.tail, s.tail.opts);
     t.rotateX(Math.PI / 2);                 // flat, like a bird's
     t.rotateZ(s.tail.droop || 0);
     attach(j.tail, [t], mat);
@@ -1459,6 +1610,334 @@ export const UPRIGHT = {
   }
 };
 
+/* ---------------------------------------------------------------------------
+   THE SMALL AND THE SQUAT
+
+   A frog is a four-legged thing whose front legs are half its back ones and
+   whose head is its front end rather than something on a neck. So these are
+   BEASTS sheets like the rest - the neck is simply almost nothing long, and
+   the body is pressed wider than it is deep.
+
+   The two critters, the frog and the rabbit that hop about the lands, are the
+   same sheets at a fraction of the size. They used to be a sphere with another
+   sphere for a nose, which is what a rabbit looks like from very far away.
+--------------------------------------------------------------------------- */
+Object.assign(BEASTS, {
+  bogling: {
+    stand: 15, width: 7, chestDrop: 2, rumpDrop: 1,
+    body: { len: 26, deep: 13, wide: 1.25, flat: .88,
+            prof: [[0, 0], [5, 1], [9, 4], [10.5, 10], [10, 16], [8, 21], [5, 24], [0, 26]] },
+    // Folded: a frog at rest is all haunch, and it is the haunch that says frog.
+    legF: [6, 6, 2.2, 1.8], legB: [9, 8, 4.2, 2.4],
+    poseF: [.22, -.34], poseB: [.85, -1.35],
+    neck: { f: 1, up: 1, len: 1.5, r: 4.6, rise: .5 },
+    head: { len: 15, prof: [[0, 0], [6, 1.5], [7.4, 5], [6.4, 10], [4, 13], [0, 15]],
+            nose: [6.4, -.8, 0, .7], eye: [1.2, 4.2, 4.0, 2.4] },
+    tail: { f: 0, up: 0, len: 0, r: 0 },
+    paw: { r: 2.6, drop: .9 },
+    col: { coat: 0x4e7a3e, belly: 0xc2c46a, muzzle: 0x5d8a48, eye: 0xf0d24a,
+           paw: 0x3d6130, leg: 0x466f38 }
+  },
+
+  mossling: {
+    stand: 13, width: 4.5, chestDrop: 2, rumpDrop: 2,
+    body: { len: 20, deep: 11, wide: 1.1,
+            prof: [[0, 0], [4, 1], [7.5, 4], [8.5, 9], [8, 13], [6, 17], [0, 20]] },
+    legF: [5, 4, 2.0, 1.6], legB: [5, 4, 2.1, 1.7],
+    poseF: [.10, -.16], poseB: [.20, -.34],
+    neck: { f: 2, up: 2, len: 2, r: 3.0, rise: 1.5 },
+    head: { len: 11, prof: [[0, 0], [4.4, 1.5], [5.4, 4], [4.4, 8], [2.6, 9.6], [0, 11]],
+            nose: [4.8, -.4, 0, .7], eye: [2.0, 1.6, 2.6, 1.1] },
+    ears: { type: 'round', r: 2.0, at: [-1.4, 3.0, 2.2] },
+    tail: { f: 1, up: 1, len: 3, r: 1.4, droop: .4 },
+    paw: { r: 1.8, drop: .7 },
+    col: { coat: 0x6f8f4a, belly: 0x9db85f, muzzle: 0x86a355, ear: 0x54702f,
+           eye: 0x2c3a18, paw: 0x54702f },
+    // Leaves growing along its back, which is the whole of its name.
+    extra: (j, mat, C, s) => attach(j.spine, leaves(s, 0x4e7a30, 0x6f9c42), mat)
+  },
+
+  critterfrog: {
+    scale: .34,
+    stand: 15, width: 7, chestDrop: 2, rumpDrop: 1,
+    body: { len: 24, deep: 12, wide: 1.25, flat: .88,
+            prof: [[0, 0], [5, 1], [9, 4], [10, 10], [9.4, 15], [7, 20], [0, 24]] },
+    legF: [6, 6, 2.2, 1.8], legB: [9, 8, 4.0, 2.4],
+    poseF: [.22, -.34], poseB: [.85, -1.35],
+    neck: { f: 1, up: 1, len: 1.5, r: 4.4, rise: .5 },
+    head: { len: 14, prof: [[0, 0], [5.6, 1.5], [7, 5], [6, 9], [3.6, 12], [0, 14]],
+            eye: [1.2, 4.0, 3.8, 2.2] },
+    tail: { f: 0, up: 0, len: 0, r: 0 },
+    paw: { r: 2.4, drop: .8 },
+    col: { coat: 0x5f9c52, belly: 0xbcc97a, eye: 0x1d2430, paw: 0x4a7c40 }
+  },
+
+  critterrabbit: {
+    scale: .30,
+    stand: 22, width: 5, chestDrop: 4, rumpDrop: 3,
+    body: { len: 32, deep: 9, prof: [[0, 0], [4, 1.5], [7.5, 6], [8.5, 13], [7.5, 21], [5.5, 27], [0, 32]] },
+    legF: [7, 7, 2.2, 1.8], legB: [10, 5, 3.4, 2.2],
+    neck: { f: 2, up: 4, len: 3.5, r: 2.4, rise: 3 },
+    head: { len: 13, prof: [[0, 0], [3.4, 1.5], [4.6, 5], [3.8, 9], [2.4, 11], [0, 13]],
+            nose: [5.8, -.4, 0, .8], eye: [1.4, 1.8, 2.4, .9] },
+    ears: { type: 'long', r: 1.9, len: 13, at: [-1.2, 3.4, 1.8], flare: .20, lean: -.45 },
+    tail: { f: 1, up: 2, len: 3.5, r: 2.2, tuft: 1.0, droop: -.3 },
+    paw: { r: 2.2, drop: .9 },
+    col: { coat: 0xb5a48c, belly: 0xe0d6c2, muzzle: 0xd4c7ad, ear: 0x8f8069, earIn: 0xd3a9a0,
+           eye: 0x1d2430, paw: 0x97886f }
+  }
+});
+
+/* Leaves along a back. Flat panels rather than blobs, because a leaf is an
+   outline - the same reason a wing is - and three sizes of one drawn shape,
+   laid in a row and turned a little each, is a plant growing out of something
+   rather than a row of identical green tabs. */
+function leaves(s, dark, light) {
+  const out = [], L = s.body.len;
+  const shape = [[0, 0], [1.6, 2.2], [2.2, 5], [1.4, 7.6], [0, 8.6], [-1.4, 7.6], [-2.2, 5], [-1.6, 2.2]];
+  const rows = [[.24, 1.15, .5], [.42, 1.45, -.2], [.60, 1.25, .35], [.76, .95, -.5]];
+  for (const [along, size, turn] of rows) {
+    for (const side of [-1, 0, 1]) {
+      if (side === 0 && size < 1.1) continue;
+      const g = panel(shape.map(([x, y]) => [x * size, y * size]), .5,
+        side === 0 ? light : dark, { bevel: .18 });
+      g.rotateX(side * .75 + turn * .3);
+      g.rotateZ(-.5 - Math.abs(side) * .15);
+      out.push(at(g, -L / 2 + along * L, s.body.deep * .42, side * s.body.deep * .30));
+    }
+  }
+  return [mergeGeometries(out)];
+}
+
+/* ---------------------------------------------------------------------------
+   THE MANY-LEGGED SHEETS
+
+   Each leg row is [x along the body, y, z out from the middle, upper length,
+   lower length, thickness, how far out it splays, how far forward it reaches].
+   Front legs reach forward and back legs reach back, which is the difference
+   between a bug walking and a bug lying on its back with its legs in the air.
+--------------------------------------------------------------------------- */
+export const BUGS = {
+  tombbeetle: {
+    scale: 1.15, stand: 13,
+    shell: { len: 40, deep: 13, flat: .74, wide: 1.06,
+             prof: [[0, 0], [5, 2], [10, 7], [12, 16], [11, 26], [8, 34], [0, 40]],
+             plates: [.30, .52, .74] },
+    head: { at: 20, up: 1, len: 12, prof: [[0, 0], [4, 1.5], [5.4, 4], [4.6, 8], [3, 10.5], [0, 12]],
+            eye: [3.6, 1.6, 3.0, 1.0] },
+    antennae: { r: .8, len: 8, at: [3.0, 2.2, 1.6] },
+    legs: [
+      [11, -1, 12.5, 7, 8, 1.7, .95, -.50],
+      [1, -1, 13.5, 7, 9, 1.8, 1.05, 0],
+      [-9, -1, 12.5, 7, 9, 1.8, 1.00, .55]
+    ],
+    col: { shell: 0x3f4a35, under: 0x2a3124, leg: 0x2f3728, foot: 0x232a1d,
+           coat: 0x35402d, eye: 0x9fd85c, antenna: 0x2f3728 },
+    // A beetle's back is two halves with a line down the middle, and that line
+    // is most of what says beetle rather than woodlouse.
+    extra: (j, mat, C, s) => {
+      const split = new THREE.Mesh(new THREE.BoxGeometry(s.shell.len * .62, .5, .7),
+        lit({ color: 0x1f2418, roughness: 1 }));
+      split.position.set(-2, s.shell.deep * s.shell.flat * .92, 0);
+      j.body.add(split);
+    }
+  },
+
+  rubblecrab: {
+    scale: 1.2, stand: 11,
+    // Wide and low. Half as deep as it is broad, which no other thing here is.
+    shell: { len: 26, deep: 14, flat: .54, wide: 1.30,
+             prof: [[0, 0], [7, 2], [12, 6], [14, 13], [12, 20], [7, 24], [0, 26]],
+             plates: [.38, .66] },
+    head: { at: 12, up: -1, len: 7, prof: [[0, 0], [3.6, 1], [4.2, 3], [3.2, 5.5], [0, 7]] },
+    stalks: { r: 1.2, len: 7, at: [1.5, 3.2, 2.6] },
+    legs: [
+      [7, 0, 16.5, 6, 8, 1.6, 1.15, -.65],
+      [1, 0, 18, 6, 9, 1.7, 1.25, -.20],
+      [-5, 0, 17.5, 6, 9, 1.7, 1.25, .28],
+      [-10, 0, 15, 5, 8, 1.6, 1.15, .70]
+    ],
+    claw: { at: [13, 1, 13], upper: 9, r: 2.6, spread: .55, lift: -.35, pr: 3.6, plen: 7 },
+    col: { shell: 0x7a6a5c, under: 0x9a8b7a, leg: 0x635648, foot: 0x4a4037,
+           coat: 0x6e5f52, glow: 0xffd97a }
+  }
+};
+
+/* A fish is a flier that happens to be in water: a body, a pair of fins that
+   beat, and a tail that steers. So the Brookfin is a FLIERS sheet, with its
+   body pressed the other way about - tall and narrow rather than flat and
+   wide - and its pectorals where an owl's wings would be. The bat that flits
+   about the lands is the Shadow Bat at a third of the size. */
+Object.assign(FLIERS, {
+  brookfin: {
+    hover: 26,
+    body: { len: 34, deep: 8, flat: 1.15, wide: .60,
+            prof: [[0, 0], [2, 1], [5, 5], [7, 13], [6.5, 22], [4, 29], [0, 34]] },
+    neck: { f: 11, up: 1, len: 1, r: 0 },
+    head: { len: 11, flat: 1.2, wide: .66,
+            prof: [[0, 0], [4.2, 1.5], [5, 4], [4, 8], [2.4, 10], [0, 11]],
+            eye: [3.2, 1.8, 2.6, 1.4] },
+    // The pectorals, small and fanning rather than a wing that carries weight.
+    wing: {
+      at: [4, -1, 3.2], inner: 5, thick: .7, rest: .34, restTip: .14, flap: .28, rate: 4.4,
+      opts: { sharp: true, bevel: .18 },
+      inOutline: [[3, 0], [4, 2.5], [3.2, 4.5], [2, 5], [-2.5, 5], [-3.6, 3.5], [-3, 1.2], [-2, 0]],
+      outOutline: [[2, -1], [2.2, 2], [1, 5], [-1, 7], [-3.4, 6], [-4, 3.5], [-3.6, 1], [-2.4, -1]]
+    },
+    // Forked, with the notch between the lobes - the one detail that says
+    // "fish" from behind, which is the angle he usually sees it from.
+    tail: { f: 15, up: 0, thick: .7, droop: 0, opts: { sharp: true, bevel: .18 },
+            outline: [[0, -2.5], [3, -10], [9, -14], [10, -6], [5.5, 0],
+                      [10, 6], [9, 14], [3, 10], [0, 2.5]] },
+    col: { coat: 0x5b9ec6, belly: 0xd3e8f2, wing: 0x8fcbe4, wingTip: 0xb4e0f0,
+           eye: 0x14212e, tail: 0x8fcbe4 },
+    // The dorsal, standing up on edge - the one fin you see from the bank.
+    extra: (j, mat, C) => {
+      const d = panel([[4.5, 0], [5, 3], [2, 6], [-1, 7], [-5, 4.5], [-5, 1.5], [-3, 0]], .6, C.wing, { sharp: true, bevel: .18 });
+      attach(j.body, [at(d, 0, 9, 0)], mat);
+    }
+  },
+
+  critterbat: {
+    scale: .34, hover: 30,
+    body: { len: 16, deep: 5, prof: [[0, 0], [2, 1], [4, 4], [4.5, 8], [4, 12], [2.5, 15], [0, 16]] },
+    neck: { f: 5, up: 2, len: 2, r: 2.4 },
+    head: { len: 9, prof: [[0, 0], [3.4, 1], [4.2, 3], [3.4, 6], [2, 8], [0, 9]],
+            nose: [4.0, -.4, 0, .8], eye: [2.6, 1.1, 1.8, .7] },
+    ears: { type: 'long', r: 2.2, len: 8, at: [-.8, 3.4, 1.8], flare: .3, lean: -.25 },
+    wing: {
+      at: [0, 2, 2.5], inner: 13, thick: 1.0, rest: .18, restTip: -.30, flap: .95, rate: 9,
+      inOutline: [[5, 0], [6, 4], [5.5, 9], [4, 12.5], [3, 13],
+                  [-5, 13], [-6.5, 12.5], [-8, 8], [-7, 3], [-5, 0]],
+      outOutline: [[3, -2], [1.5, 4], [-1, 10], [-4, 16], [-5.5, 18],
+                   [-7, 17], [-9, 12], [-9, 6], [-8, 1], [-5, -2]]
+    },
+    tail: { f: 7, up: -1, len: 5, r: 1.2, droop: .6 },
+    col: { coat: 0x4a3f5c, belly: 0x5f5273, wing: 0x3b3249, wingTip: 0x322a3e,
+           eye: 0xf1d36a, ear: 0x3b3249, nose: 0x241e2e, tail: 0x3b3249 }
+  }
+});
+
+/* ---------------------------------------------------------------------------
+   THE ONES THAT ARE NOT ANIMALS AT ALL
+
+   A dust devil is not built like anything else in the game, because it has no
+   body: it is a column of air with things caught up in it. And the Guardian is
+   one eye the size of a cart, which is not a creature either.
+
+   Both are written out rather than given sheets. A sheet earns its keep when
+   there are several of a kind; there is one of each of these.
+--------------------------------------------------------------------------- */
+export function buildVortex() {
+  const g = new THREE.Group();
+  const mat = figureMat();
+
+  /* Rings, widest at the top and tightening to nothing at the ground, each
+     turned a little further round than the one below. The twist is the whole
+     illusion: a stack of rings all facing the same way is a lampshade. */
+  const parts = [];
+  const N = 9;
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);
+    const r = 5 + t * t * 26;
+    const ring = turned([
+      [r * .72, 0], [r, 1.2], [r * 1.02, 5.5], [r * .86, 7],
+      [r * .66, 6.4], [r * .74, 2.4]
+    ], i % 2 ? 0x8a7a62 : 0x776850, 16, ragged(2.2, 2.0));
+    ring.rotateY(t * 5.2);
+    ring.scale(1, 1, .82 + t * .2);
+    parts.push(at(ring, t * 3, 4 + t * 52, 0));
+  }
+  const col = new THREE.Mesh(mergeGeometries(parts), mat);
+  col.castShadow = true;
+  g.add(col);
+
+  // Two lights somewhere up inside it, which is all there is of a face.
+  const eyes = [];
+  for (const side of [-1, 1]) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(2.6, 10, 8), glow(0xf0c060, 2.2));
+    e.position.set(17, 46, side * 5.5);
+    g.add(e);
+    eyes.push(e);
+  }
+
+  // Grit going round with it, so the turn is visible even when it is still.
+  const grit = new THREE.Group();
+  for (let i = 0; i < 14; i++) {
+    const t = i / 14;
+    const b = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1 + (i % 3) * .5, 0),
+      lit({ color: i % 2 ? 0x9a8a70 : 0x6e6050, roughness: 1 }));
+    const a = i * 2.39, rad = 10 + t * 22;
+    b.position.set(Math.cos(a) * rad, 10 + t * 46, Math.sin(a) * rad);
+    grit.add(b);
+  }
+  g.add(grit);
+
+  g.userData = { eyes, spin: col, grit, height: 62 };
+  return inkGroup(g);
+}
+
+export function buildGuardian() {
+  const g = new THREE.Group();
+  const mat = figureMat();
+
+  /* A shell in two halves, parted, with the eye between them. Parted rather
+     than whole because a closed ball is a rock, and what makes this read as
+     something awake is that it has OPENED. */
+  const shellCol = 0x3b3560, rimCol = 0x554d86;
+  for (const s of [1, -1]) {
+    const half = turned([
+      [4, 0], [22, 2], [27, 10], [26, 20], [18, 26],
+      [17, 24], [24, 19], [25, 10], [20, 5], [4, 3]
+    ], s > 0 ? rimCol : shellCol, 22);
+    /* TURNED over, not mirrored. Scaling y by minus one is the obvious way to
+       get the lower half from the upper and it reflects the solid: every face
+       ends up wound backwards, and the half simply is not drawn. The same
+       mistake the wings are built to avoid, made again here. */
+    if (s < 0) half.rotateX(Math.PI);
+    half.rotateZ(s * .34);
+    const m = new THREE.Mesh(half, mat);
+    m.position.y = 40 + s * 15;
+    m.castShadow = true;
+    g.add(m);
+  }
+
+  const eyeball = new THREE.Mesh(new THREE.SphereGeometry(17, 24, 18),
+    lit({ color: 0xe8e4f4, roughness: .3 }));
+  eyeball.position.y = 40;
+  eyeball.castShadow = true;
+  g.add(eyeball);
+
+  const iris = new THREE.Mesh(new THREE.SphereGeometry(9, 18, 14), glow(0xf5d76e, 2.4));
+  iris.scale.set(.5, 1, 1);
+  iris.position.set(13, 40, 0);
+  g.add(iris);
+  const pupil = new THREE.Mesh(new THREE.SphereGeometry(4.2, 14, 10), glow(0x1a0f26, 1));
+  pupil.scale.set(.5, 1, 1);
+  pupil.position.set(16.2, 40, 0);
+  g.add(pupil);
+
+  // The shards it took, still going round it.
+  const ring = new THREE.Group();
+  for (let i = 0; i < 7; i++) {
+    const sh = new THREE.Mesh(new THREE.OctahedronGeometry(5), glow(0xc8b4ff, 2.2));
+    const a = i * (Math.PI * 2 / 7);
+    sh.position.set(Math.cos(a) * 44, Math.sin(a * 2) * 6, Math.sin(a) * 44);
+    sh.rotation.set(a, a * 1.7, 0);
+    ring.add(sh);
+  }
+  ring.position.y = 40;
+  g.add(ring);
+
+  const light = new THREE.PointLight(0xc8b4ff, 2.2, 700, 2);
+  light.position.y = 40;
+  g.add(light);
+
+  g.userData = { eyes: [iris], ring, iris, pupil, height: 72 };
+  g.scale.setScalar(1.35);
+  return inkGroup(g);
+}
+
 /* A hedgehog's back. Spines laid in rows over the barrel, each one leaning the
    way the back falls away, so the silhouette is a bank of points rather than a
    lump with texture on it. They are merged into one shape - there are sixty of
@@ -1561,6 +2040,9 @@ function drawFromSheet(id) {
   if (BEASTS[id]) return buildBeast(BEASTS[id]);
   if (FLIERS[id]) return buildFlier(FLIERS[id]);
   if (UPRIGHT[id]) return buildUpright(UPRIGHT[id]);
+  if (BUGS[id]) return buildBug(BUGS[id]);
+  if (id === 'dustdevil') return buildVortex();
+  if (id === 'guardian') return buildGuardian();
   return null;
 }
 
@@ -1603,6 +2085,16 @@ function blobMonster(boss) {
 }
 
 export function buildCritter(kind) {
+  /* Frogs, rabbits and bats. They are the same animals as the ones that fight,
+     drawn at a third of the size, so they are the same sheets - which is the
+     whole argument for sheets. A rabbit reads as a rabbit at twenty units tall
+     or at seventy; it does not read at all as a sphere with a nose. */
+  const g = drawFromSheet('critter' + kind);
+  if (g) return g;
+  return blobCritter(kind);
+}
+
+function blobCritter(kind) {
   const g = new THREE.Group();
   const vmat = lit({ vertexColors: true, roughness: .85, flatShading: true });
   if (kind === 'bat') {
@@ -1655,7 +2147,8 @@ const MONSTER_LIST = [
   ['rubblecrab', 'Rubble Crab'], ['shadehound', 'Shade Hound'], ['nightfox', 'Night Fox'],
   ['guardian', 'Gate Guardian', true]
 ];
-const drawn = id => (BEASTS[id] || FLIERS[id] || UPRIGHT[id])
+const drawn = id => (BEASTS[id] || FLIERS[id] || UPRIGHT[id] || BUGS[id]
+  || id === 'dustdevil' || id === 'guardian')
   ? 'drawn from its own sheet' : 'not yet drawn — still the old shape';
 
 export const FIGURES = [
@@ -1667,7 +2160,8 @@ export const FIGURES = [
   ...MONSTER_LIST.map(([id, name, boss]) => ({
     id, name, note: drawn(id), make: () => buildMonster({ id, boss: !!boss })
   })),
-  { id: 'frog', name: 'Frog', note: 'not yet drawn', make: () => buildCritter('frog') },
-  { id: 'rabbit', name: 'Rabbit', note: 'not yet drawn', make: () => buildCritter('rabbit') },
-  { id: 'bat', name: 'Bat', note: 'not yet drawn', make: () => buildCritter('bat') }
+  ...['frog', 'rabbit', 'bat'].map(k => ({
+    id: k, name: k[0].toUpperCase() + k.slice(1) + ' (critter)',
+    note: drawn('critter' + k), make: () => buildCritter(k)
+  }))
 ];

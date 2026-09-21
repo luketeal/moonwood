@@ -1122,6 +1122,11 @@ export function createRenderer(canvas, opts) {
       // and the ones with wings beat them, each starting at its own moment so
       // a land full of them does not look like one thing copied out five times
       if (g.userData.wings) F.flapWings(g.userData, t * g.userData.flapRate + m.x);
+      // and the dust devil turns on itself, with its grit going the other way
+      if (g.userData.spin) {
+        g.userData.spin.rotation.y = t * 1.5 + m.x;
+        g.userData.grit.rotation.y = -t * .9 + m.x;
+      }
     }
 
     // The Guardian, which only exists once it has been woken.
@@ -1139,11 +1144,8 @@ export function createRenderer(canvas, opts) {
       const ph = t * 3.8 + c.ph;
       g.position.set(c.x, gh(c.x, c.y) + Math.abs(Math.sin(ph)) * (3 + c.hop * 7), c.y);
       g.rotation.y = W.yaw(c.dir || 0);
-      if (g.userData.wings) {
-        const w = Math.sin(ph * 3) * .8;
-        g.userData.wings[0].rotation.x = w;
-        g.userData.wings[1].rotation.x = -w;
-      }
+      // The bat beats its wings; the frog and the rabbit only hop.
+      if (g.userData.wings) F.flapWings(g.userData, ph * 3);
     }
 
     // Shards turning in the air.
