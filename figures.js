@@ -46,7 +46,10 @@
 --------------------------------------------------------------------------- */
 import * as THREE from './vendor/three.module.min.js';
 import { mergeGeometries } from './vendor/utils/BufferGeometryUtils.js';
-import { lit, inkGroup, paint, at } from './world3d.js';
+import {
+  lit, inkGroup, paint, at,
+  turned, spindle, alongX, alongNegX, panel, layFlat, ragged, underside
+} from './world3d.js';
 
 /* Figures are smooth, not faceted. The light ramp puts a hard edge between lit
    and unlit; on a faceted surface that edge can only ever fall along a facet
@@ -157,152 +160,9 @@ export function bone(len, rTop, rBot, colour, opts) {
   return mergeGeometries(parts);
 }
 
-/* ---------------------------------------------------------------------------
-   PROFILES AND GARMENTS
 
-   A garment is an outline turned about the figure's axis. The outline is given
-   as a handful of [radius, height] points and smoothed through, so the shape
-   is a curve rather than a straight taper - the difference between a cloak that
-   falls and a traffic cone.
 
-   The outline is CLOSED: it runs down the inside, across the hem, and back up
-   the outside. That gives the cloth a thickness and therefore a hem edge, which
-   is the thing you actually see from the side, and it keeps the shape a solid
-   so the ink line has something sensible to wrap.
---------------------------------------------------------------------------- */
-export function turned(pts, colour, seg, deform) {
-  /* Centripetal, not the default. A smooth curve drawn through points that
-     turn sharply - and a hem turns through a full half-circle in about two
-     points - will swing WIDE of them on the way round if it is parameterised
-     evenly, and the shape balloons out where it should be tightest. A boot
-     came out as a barrel that way, and a hood as a slab. Centripetal
-     parameterisation is the one that provably cannot overshoot. */
-  const curve = new THREE.CatmullRomCurve3(
-    pts.map(([r, y]) => new THREE.Vector3(r, y, 0)), true, 'centripetal');
-  const fine = curve.getPoints(Math.max(24, pts.length * 4))
-    .map(p => new THREE.Vector2(Math.max(.02, p.x), p.y));
-  fine.push(fine[0].clone());               // lathe does not close the loop itself
-  const geo = new THREE.LatheGeometry(fine, seg || 20);
-  /* Any pushing about of the shape has to happen HERE, while the lathe still
-     has its index. paint() drops the index so the part can be merged with its
-     neighbours, and recomputing normals after that gives one normal per face
-     rather than one per corner - which facets the very surface the lathe was
-     used to keep smooth. */
-  if (deform) { deform(geo); geo.computeVertexNormals(); }
-  return paint(geo, colour);
-}
 
-/* ---------------------------------------------------------------------------
-   A SPINDLE
-
-   The other half of `turned`, and the one bodies are made of. `turned` takes a
-   CLOSED outline and gives back a tube with a wall - right for a cloak, which
-   has a hole in it for a head. A body has no hole: its outline runs from a
-   point at one end, out to its widest, and back to a point at the other.
-
-   So this takes an OPEN profile and closes it against the axis at both ends.
-   The two ends become proper poles, exactly as they are on a sphere, and the
-   ink line handles them the same way it handles a sphere. (What it must not do
-   is touch the axis in the middle of a CLOSED loop - that leaves a sliver of
-   near-nothing which the ink shell blows up into a spike.)
---------------------------------------------------------------------------- */
-export function spindle(pts, colour, seg, deform) {
-  const curve = new THREE.CatmullRomCurve3(
-    pts.map(([r, y]) => new THREE.Vector3(r, y, 0)), false, 'centripetal');
-  const fine = curve.getPoints(Math.max(20, pts.length * 5))
-    .map(p => new THREE.Vector2(Math.max(0, p.x), p.y));
-  const geo = new THREE.LatheGeometry(fine, seg || 18);
-  if (deform) { deform(geo); geo.computeVertexNormals(); }
-  return paint(geo, colour);
-}
-
-/* Lay a spindle down along the way the figure faces, so its profile reads as
-   nose-to-tail rather than head-to-toe. A body is the same kind of shape as a
-   head or a tail - round in section, varying in girth along its length - so
-   all three are made this way. */
-export function alongX(geo) { geo.rotateZ(-Math.PI / 2); return geo; }
-
-/* ...and the same the other way, for a tail, which grows backwards out of the
-   end the head is not at. Turning `droop` up now lowers it, which is what the
-   word means. */
-export function alongNegX(geo) { geo.rotateZ(Math.PI / 2); return geo; }
-
-/* ---------------------------------------------------------------------------
-   A PANEL
-
-   A wing is not a shape you can turn on a lathe. It is an OUTLINE - a curve
-   you could draw round with a pencil - with almost no thickness, and what
-   makes an owl's wing an owl's rather than a bat's is entirely that curve.
-
-   So: the outline is drawn as a list of points, smoothed, and given just
-   enough depth to be a solid. The edge is rounded rather than cut square,
-   which matters more than it sounds: the ink line is drawn by pushing the
-   surface outwards along the way it faces, and a razor edge has no agreed
-   direction to push, so it comes out ragged.
-
-   Built in the plane the outline is drawn in, and turned flat by the caller,
-   because a wing and a fin and a leaf all want the same shape and different
-   orientations.
---------------------------------------------------------------------------- */
-export function panel(pts, thick, colour, opts) {
-  const o = opts || {};
-  /* A wing wants smoothing and a fin does not. Run through a curve, every
-     corner of a fin rounds off and the whole thing comes out as a paddle -
-     and a fish is nothing but corners: the notch in its tail, the point of
-     its dorsal. `sharp` uses the drawn points as drawn. */
-  const fine = o.sharp
-    ? pts.map(([x, y]) => new THREE.Vector3(x, y, 0))
-    : new THREE.CatmullRomCurve3(
-        pts.map(([x, y]) => new THREE.Vector3(x, y, 0)), true, 'centripetal')
-        .getPoints(Math.max(28, pts.length * 5));
-  const shape = new THREE.Shape();
-  shape.moveTo(fine[0].x, fine[0].y);
-  for (let i = 1; i < fine.length; i++) shape.lineTo(fine[i].x, fine[i].y);
-  shape.closePath();
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth: thick, bevelEnabled: true,
-    bevelThickness: thick * .45, bevelSize: o.bevel === undefined ? thick * .8 : o.bevel,
-    bevelSegments: 2, curveSegments: 1, steps: 1
-  });
-  geo.translate(0, 0, -thick / 2);
-  geo.computeVertexNormals();
-  return paint(geo, colour);
-}
-
-/* A wing, laid flat and spanning outwards. The outline is drawn with x running
-   fore-and-aft and y running out along the span; this stands it up so the span
-   runs across the figure and the thin way is up-and-down.
-
-   Left and right are two different TURNS of the same shape rather than a
-   mirror of it. A mirror turns a solid inside out - every face ends up wound
-   the wrong way round and the whole wing lights as though it were hollow. */
-export function layFlat(geo, side) { geo.rotateX(side < 0 ? -Math.PI / 2 : Math.PI / 2); return geo; }
-
-/* A cloak hangs level all the way round only if nobody is inside it. This lifts
-   the hem at the front - where the figure's legs are - so it parts as he walks,
-   which is most of what says "cloth" rather than "bell".
-
-   `front` is how far up the hem at +x rises; the lift falls away to nothing at
-   the back. Only the low corners move, so the shoulders keep their shape. */
-/* Tear the bottom off something. A thing made of straw that ends in a smooth
-   turned curve reads as a bell, however good the colour is - what says straw
-   is that the hem is a different length everywhere you look. The variation is
-   in whole steps rather than a wobble, so it reads as strands rather than as
-   a dented lampshade, and it dies away above `below` so only the hem moves. */
-const ragged = (amount, below) => geo => {
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    if (y > below) continue;
-    const a = Math.atan2(z, x);
-    // three overlapping runs of strands, so no two look alike round the turn
-    const n = Math.sin(a * 7) * .5 + Math.sin(a * 13 + 1.7) * .3 + Math.sin(a * 23 + .6) * .2;
-    const depth = Math.min(1, (below - y) / 8);
-    pos.setY(i, y - Math.abs(n) * amount * depth);
-    const r = Math.hypot(x, z) || 1;
-    pos.setXYZ(i, x * (1 + n * .04 * depth), pos.getY(i), z * (1 + n * .04 * depth));
-  }
-};
 
 const drape = (lift, below, hug, hugFrom) => geo => {
   const pos = geo.attributes.position;
@@ -659,25 +519,6 @@ export function buildLuna() {
    `glimmercat` are friendly and `shadehound` is not, and the only difference
    between them in this file is the numbers.
 --------------------------------------------------------------------------- */
-/* Repaint the lower part of a shape. `below` is where the change happens and
-   `fade` how much of a gradient it gets - nearly none, because the whole point
-   of the light ramp is that this picture is made of flat areas with edges
-   between them, and a soft airbrushed belly would be the one thing in the
-   scene that is not. */
-function underside(geo, hex, below, fade) {
-  const pos = geo.attributes.position, col = geo.attributes.color;
-  const c = new THREE.Color(hex);
-  const f = fade || 1;
-  for (let i = 0; i < pos.count; i++) {
-    const t = Math.min(1, Math.max(0, (below - pos.getY(i)) / f));
-    if (t <= 0) continue;
-    col.setXYZ(i,
-      col.getX(i) + (c.r - col.getX(i)) * t,
-      col.getY(i) + (c.g - col.getY(i)) * t,
-      col.getZ(i) + (c.b - col.getZ(i)) * t);
-  }
-  return geo;
-}
 
 function quadRig(s) {
   const L = s.body.len, W = s.width;

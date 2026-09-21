@@ -167,7 +167,13 @@ await mkdir(outDir, { recursive: true });
 const { server, port } = await serve(ROOT);
 const { chromium } = await loadPlaywright();
 
+/* Playwright normally brings its own Chromium. Somewhere that already has one -
+   a CI image, a container with the browsers baked in - the version Playwright
+   wants and the version that is there may not match, and it refuses to start
+   rather than use what it finds. PW_CHROME=/path/to/chrome points it at the
+   one that is actually installed. Unset, nothing changes. */
 const browser = await chromium.launch({
+  executablePath: process.env.PW_CHROME || undefined,
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
          '--hide-scrollbars', '--mute-audio']
 });

@@ -425,38 +425,239 @@ export function paint(geo, hex) {
 }
 export function at(geo, x, y, z) { geo.translate(x, y, z); return geo; }
 
+/* ---------------------------------------------------------------------------
+   THE DRAWING TOOLS
+
+   These four ways of making a shape started out in figures.js, because that is
+   where the need for them appeared: a cloak wants an outline turned about an
+   axis, a body wants the same closed off at both ends, a wing wants a drawn
+   outline with thickness.
+
+   None of that is about figures. A standing stone is an outline turned about
+   an axis; a windmill's sail is a drawn outline with thickness. They live here
+   now, and figures.js imports them, so the world can be built out of the same
+   four things the creatures are - which is the point, because the world is
+   what fills most of the screen.
+--------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   PROFILES AND GARMENTS
+
+   A garment is an outline turned about the figure's axis. The outline is given
+   as a handful of [radius, height] points and smoothed through, so the shape
+   is a curve rather than a straight taper - the difference between a cloak that
+   falls and a traffic cone.
+
+   The outline is CLOSED: it runs down the inside, across the hem, and back up
+   the outside. That gives the cloth a thickness and therefore a hem edge, which
+   is the thing you actually see from the side, and it keeps the shape a solid
+   so the ink line has something sensible to wrap.
+--------------------------------------------------------------------------- */
+export function turned(pts, colour, seg, deform) {
+  /* Centripetal, not the default. A smooth curve drawn through points that
+     turn sharply - and a hem turns through a full half-circle in about two
+     points - will swing WIDE of them on the way round if it is parameterised
+     evenly, and the shape balloons out where it should be tightest. A boot
+     came out as a barrel that way, and a hood as a slab. Centripetal
+     parameterisation is the one that provably cannot overshoot. */
+  const curve = new THREE.CatmullRomCurve3(
+    pts.map(([r, y]) => new THREE.Vector3(r, y, 0)), true, 'centripetal');
+  const fine = curve.getPoints(Math.max(24, pts.length * 4))
+    .map(p => new THREE.Vector2(Math.max(.02, p.x), p.y));
+  fine.push(fine[0].clone());               // lathe does not close the loop itself
+  const geo = new THREE.LatheGeometry(fine, seg || 20);
+  /* Any pushing about of the shape has to happen HERE, while the lathe still
+     has its index. paint() drops the index so the part can be merged with its
+     neighbours, and recomputing normals after that gives one normal per face
+     rather than one per corner - which facets the very surface the lathe was
+     used to keep smooth. */
+  if (deform) { deform(geo); geo.computeVertexNormals(); }
+  return paint(geo, colour);
+}
+
+/* ---------------------------------------------------------------------------
+   A SPINDLE
+
+   The other half of `turned`, and the one bodies are made of. `turned` takes a
+   CLOSED outline and gives back a tube with a wall - right for a cloak, which
+   has a hole in it for a head. A body has no hole: its outline runs from a
+   point at one end, out to its widest, and back to a point at the other.
+
+   So this takes an OPEN profile and closes it against the axis at both ends.
+   The two ends become proper poles, exactly as they are on a sphere, and the
+   ink line handles them the same way it handles a sphere. (What it must not do
+   is touch the axis in the middle of a CLOSED loop - that leaves a sliver of
+   near-nothing which the ink shell blows up into a spike.)
+--------------------------------------------------------------------------- */
+export function spindle(pts, colour, seg, deform) {
+  const curve = new THREE.CatmullRomCurve3(
+    pts.map(([r, y]) => new THREE.Vector3(r, y, 0)), false, 'centripetal');
+  const fine = curve.getPoints(Math.max(20, pts.length * 5))
+    .map(p => new THREE.Vector2(Math.max(0, p.x), p.y));
+  const geo = new THREE.LatheGeometry(fine, seg || 18);
+  if (deform) { deform(geo); geo.computeVertexNormals(); }
+  return paint(geo, colour);
+}
+
+/* Lay a spindle down along the way the figure faces, so its profile reads as
+   nose-to-tail rather than head-to-toe. A body is the same kind of shape as a
+   head or a tail - round in section, varying in girth along its length - so
+   all three are made this way. */
+export function alongX(geo) { geo.rotateZ(-Math.PI / 2); return geo; }
+
+/* ...and the same the other way, for a tail, which grows backwards out of the
+   end the head is not at. Turning `droop` up now lowers it, which is what the
+   word means. */
+export function alongNegX(geo) { geo.rotateZ(Math.PI / 2); return geo; }
+
+/* ---------------------------------------------------------------------------
+   A PANEL
+
+   A wing is not a shape you can turn on a lathe. It is an OUTLINE - a curve
+   you could draw round with a pencil - with almost no thickness, and what
+   makes an owl's wing an owl's rather than a bat's is entirely that curve.
+
+   So: the outline is drawn as a list of points, smoothed, and given just
+   enough depth to be a solid. The edge is rounded rather than cut square,
+   which matters more than it sounds: the ink line is drawn by pushing the
+   surface outwards along the way it faces, and a razor edge has no agreed
+   direction to push, so it comes out ragged.
+
+   Built in the plane the outline is drawn in, and turned flat by the caller,
+   because a wing and a fin and a leaf all want the same shape and different
+   orientations.
+--------------------------------------------------------------------------- */
+export function panel(pts, thick, colour, opts) {
+  const o = opts || {};
+  /* A wing wants smoothing and a fin does not. Run through a curve, every
+     corner of a fin rounds off and the whole thing comes out as a paddle -
+     and a fish is nothing but corners: the notch in its tail, the point of
+     its dorsal. `sharp` uses the drawn points as drawn. */
+  const fine = o.sharp
+    ? pts.map(([x, y]) => new THREE.Vector3(x, y, 0))
+    : new THREE.CatmullRomCurve3(
+        pts.map(([x, y]) => new THREE.Vector3(x, y, 0)), true, 'centripetal')
+        .getPoints(Math.max(28, pts.length * 5));
+  const shape = new THREE.Shape();
+  shape.moveTo(fine[0].x, fine[0].y);
+  for (let i = 1; i < fine.length; i++) shape.lineTo(fine[i].x, fine[i].y);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: thick, bevelEnabled: true,
+    bevelThickness: thick * .45, bevelSize: o.bevel === undefined ? thick * .8 : o.bevel,
+    bevelSegments: 2, curveSegments: 1, steps: 1
+  });
+  geo.translate(0, 0, -thick / 2);
+  geo.computeVertexNormals();
+  return paint(geo, colour);
+}
+
+/* A wing, laid flat and spanning outwards. The outline is drawn with x running
+   fore-and-aft and y running out along the span; this stands it up so the span
+   runs across the figure and the thin way is up-and-down.
+
+   Left and right are two different TURNS of the same shape rather than a
+   mirror of it. A mirror turns a solid inside out - every face ends up wound
+   the wrong way round and the whole wing lights as though it were hollow. */
+export function layFlat(geo, side) { geo.rotateX(side < 0 ? -Math.PI / 2 : Math.PI / 2); return geo; }
+
+/* Tear the bottom off something. A thing made of straw that ends in a smooth
+   turned curve reads as a bell, however good the colour is - what says straw
+   is that the hem is a different length everywhere you look. The variation is
+   in whole steps rather than a wobble, so it reads as strands rather than as
+   a dented lampshade, and it dies away above `below` so only the hem moves. */
+export const ragged = (amount, below) => geo => {  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    if (y > below) continue;
+    const a = Math.atan2(z, x);
+    // three overlapping runs of strands, so no two look alike round the turn
+    const n = Math.sin(a * 7) * .5 + Math.sin(a * 13 + 1.7) * .3 + Math.sin(a * 23 + .6) * .2;
+    const depth = Math.min(1, (below - y) / 8);
+    pos.setY(i, y - Math.abs(n) * amount * depth);
+    const r = Math.hypot(x, z) || 1;
+    pos.setXYZ(i, x * (1 + n * .04 * depth), pos.getY(i), z * (1 + n * .04 * depth));
+  }
+};
+
+/* Repaint the lower part of a shape. `below` is where the change happens and
+   `fade` how much of a gradient it gets - nearly none, because the whole point
+   of the light ramp is that this picture is made of flat areas with edges
+   between them, and a soft airbrushed belly would be the one thing in the
+   scene that is not. */
+export function underside(geo, hex, below, fade) {
+  const pos = geo.attributes.position, col = geo.attributes.color;
+  const c = new THREE.Color(hex);
+  const f = fade || 1;
+  for (let i = 0; i < pos.count; i++) {
+    const t = Math.min(1, Math.max(0, (below - pos.getY(i)) / f));
+    if (t <= 0) continue;
+    col.setXYZ(i,
+      col.getX(i) + (c.r - col.getX(i)) * t,
+      col.getY(i) + (c.g - col.getY(i)) * t,
+      col.getZ(i) + (c.b - col.getZ(i)) * t);
+  }
+  return geo;
+}
+
 // Every tree is built 100 tall and then scaled, so one shape does for all of them.
 export const TREE_H = 100;
 
+/* A trunk that TAPERS, on a curve. The old one was a six-sided tube that went
+   straight up, and six sides on something you walk right past is a hexagonal
+   post - the one place in the whole wood where you can count the corners.
+   A spindle costs no more and has none. */
+function trunk(h, rBot, rTop, colour, seg) {
+  return spindle([
+    [rBot * 1.35, 0], [rBot, h * .06], [rBot * .72, h * .30],
+    [rTop * 1.12, h * .70], [rTop, h], [0, h * 1.02]
+  ], colour, seg || 9);
+}
+
 export function pineGeometry() {
-  const parts = [paint(at(new THREE.CylinderGeometry(2.6, 4.4, 36, 6), 0, 18, 0), 0x4a3628)];
-  const tiers = [[26, 34, 26], [42, 32, 21.5], [58, 30, 17], [72, 28, 11.5]];
+  const parts = [trunk(40, 5.0, 2.4, 0x4a3628)];
+  /* Each tier is a spindle rather than a cone: a cone is a straight-sided
+     triangle and a fir bough sags. The profile is fattest a third of the way
+     down and lifts slightly at the rim, which is the difference between a
+     Christmas tree and a real one. */
+  const tiers = [[24, 36, 27], [40, 34, 22.5], [56, 32, 17.5], [70, 30, 12]];
   for (const [base, hgt, rad] of tiers) {
-    const cone = new THREE.ConeGeometry(rad, hgt, 7, 1);
-    cone.rotateY(base * .7);                         // each tier turned a little, so it is not a stack of copies
-    parts.push(paint(at(cone, 0, base + hgt / 2, 0), 0x24553e));
+    const tier = spindle([
+      [0, 0], [rad * .96, hgt * .06], [rad, hgt * .16], [rad * .74, hgt * .44],
+      [rad * .44, hgt * .72], [rad * .18, hgt * .92], [0, hgt]
+    ], 0x24553e, 11);
+    tier.rotateY(base * .7);              // each turned a little, so it is not a stack of copies
+    parts.push(at(tier, 0, base, 0));
   }
   return mergeGeometries(parts);
 }
 
 export function broadleafGeometry() {
-  const parts = [paint(at(new THREE.CylinderGeometry(3, 5, 46, 6), 0, 23, 0), 0x4a3628)];
-  const blobs = [[0, 62, 0, 27], [14, 74, 6, 18], [-15, 71, -5, 17], [2, 84, -8, 14]];
+  const parts = [trunk(50, 5.6, 3.0, 0x4a3628)];
+  // A few boughs going up into the crown, so the canopy is carried rather than
+  // balanced on top of a pole.
+  for (const [yaw, tilt, y, len] of [[0.7, .55, 40, 22], [-1.9, .62, 44, 19], [2.6, .50, 46, 17]]) {
+    const b = spindle([[0, 0], [2.2, len * .1], [1.4, len * .6], [0, len]], 0x4a3628, 7);
+    b.rotateZ(tilt); b.rotateY(yaw);
+    parts.push(at(b, 0, y, 0));
+  }
+  // Rounder, and at a higher subdivision - the canopy is the biggest single
+  // area of colour in the game and it was reading as a heap of dice.
+  const blobs = [[0, 64, 0, 27], [14, 75, 6, 18], [-15, 72, -5, 17], [2, 85, -8, 14]];
   for (const [x, y, z, r] of blobs) {
-    parts.push(paint(at(new THREE.IcosahedronGeometry(r, 1), x, y, z), 0x24553e));
+    parts.push(paint(at(new THREE.IcosahedronGeometry(r, 2), x, y, z), 0x24553e));
   }
   return mergeGeometries(parts);
 }
 
 export function deadTreeGeometry() {
-  const parts = [paint(at(new THREE.CylinderGeometry(2.2, 4.6, 70, 6), 0, 35, 0), 0x4a463e)];
+  const parts = [trunk(72, 5.2, 2.0, 0x4a463e)];
   const limbs = [[.9, .5, 62, 30], [-1.1, .7, 52, 26], [.2, .9, 70, 22], [-2.4, .6, 44, 20]];
   for (const [yaw, tilt, y, len] of limbs) {
-    const b = new THREE.CylinderGeometry(.8, 1.9, len, 5);
-    b.translate(0, len / 2, 0);
+    // Tapering to an actual point, so a bare branch ends rather than stopping.
+    const b = spindle([[0, 0], [2.0, len * .08], [1.2, len * .45], [.5, len * .8], [0, len]], 0x4a463e, 7);
     b.rotateZ(tilt);
     b.rotateY(yaw);
-    parts.push(paint(at(b, 0, y, 0), 0x4a463e));
+    parts.push(at(b, 0, y, 0));
   }
   return mergeGeometries(parts);
 }
@@ -531,15 +732,24 @@ export function propGeometry(type) {
     return paint(at(g, 0, 20, 0), 0xa3853f);
   }
   if (type === 'column') {
-    const base = paint(at(new THREE.BoxGeometry(34, 9, 34), 0, 4.5, 0), 0x4f4c46);
-    const shaft = paint(at(new THREE.CylinderGeometry(11, 12.5, 96, 10), 0, 57, 0), 0x625f57);
-    const top = new THREE.CylinderGeometry(11.5, 11, 12, 10);
+    /* The square plinth is the one thing here that SHOULD have corners - it was
+       cut square by somebody - so it keeps them, but it gets a moulding round
+       the top so it is a base rather than a crate. The shaft swells slightly
+       at the middle, the way a real column does so it does not look pinched. */
+    const base = mergeGeometries([
+      paint(at(new THREE.BoxGeometry(34, 7, 34), 0, 3.5, 0), 0x4f4c46),
+      turned([[0, 7], [15.5, 7], [16, 9], [13, 12], [12.6, 11], [14.5, 8.6], [0, 7.4]], 0x585550, 18)
+    ]);
+    const shaft = spindle([
+      [0, 12], [12.6, 12], [12.9, 30], [12.4, 62], [11.4, 92], [11.2, 104], [0, 104]
+    ], 0x625f57, 14);
+    const top = spindle([[0, 104], [11.4, 104], [12.2, 108], [11.8, 114], [0, 116]], 0x6e6a61, 14);
     const pos = top.attributes.position;       // snapped off, not sawn off
     for (let i = 0; i < pos.count; i++) {
-      if (pos.getY(i) > 0) pos.setY(i, pos.getY(i) - hash2(i * 7, 3) * 11);
+      if (pos.getY(i) > 108) pos.setY(i, pos.getY(i) - hash2(i * 7, 3) * 9);
     }
     top.computeVertexNormals();
-    return mergeGeometries([base, shaft, paint(at(top, 0, 110, 0), 0x6e6a61)]);
+    return mergeGeometries([base, shaft, top]);
   }
   if (type === 'fallen') {
     const g = new THREE.CylinderGeometry(11, 12, 96, 10);
@@ -548,11 +758,19 @@ export function propGeometry(type) {
     return paint(at(g, 0, 11, 0), 0x5c584f);
   }
   if (type === 'arch') {
-    const legL = paint(at(new THREE.BoxGeometry(22, 140, 26), -46, 70, 0), 0x625f57);
-    const legR = paint(at(new THREE.BoxGeometry(22, 104, 26), 46, 52, 0), 0x625f57);
-    const span = new THREE.TorusGeometry(46, 12, 6, 14, Math.PI * .62);
+    /* Two piers and a span that stops in mid-air. The piers were boxes; they
+       are turned now, slightly barrelled and worn thinner at the top where
+       the weather has had longest at them. */
+    const pier = (h, x) => {
+      const g = spindle([
+        [0, 0], [13, 0], [14, 5], [13.2, h * .35], [12, h * .75], [10.5, h], [0, h + 2]
+      ], 0x625f57, 12);
+      g.scale(.86, 1, 1.05);
+      return at(g, x, 0, 0);
+    };
+    const span = new THREE.TorusGeometry(46, 12, 8, 18, Math.PI * .62);
     span.rotateZ(Math.PI * .19);
-    return mergeGeometries([legL, legR, paint(at(span, 0, 140, 0), 0x67635b)]);
+    return mergeGeometries([pier(140, -46), pier(104, 46), paint(at(span, 0, 140, 0), 0x67635b)]);
   }
   // rubble
   const bits = [[-8, 7, 2, 9], [7, 6, -3, 8], [0, 15, 1, 6.5], [-2, 5, -8, 5]];
@@ -582,9 +800,16 @@ export function buildGate() {
   arch.castShadow = true; arch.receiveShadow = true;
   g.add(arch);
 
+  /* The feet the arch stands on. Squared off at the bottom, because they were
+     cut and laid by somebody, but stepped and moulded rather than being one
+     block each - a plain box under a great stone arch reads as scaffolding. */
   for (const side of [-1, 1]) {
-    const foot = new THREE.Mesh(new THREE.BoxGeometry(52, 30, 34), stone);
-    foot.position.set(side * R, 14, 0);
+    const foot = new THREE.Mesh(mergeGeometries([
+      paint(at(new THREE.BoxGeometry(52, 12, 34), 0, 6, 0), 0x7c88ab),
+      paint(turned([[0, 12], [24, 12], [25, 16], [21, 21], [20.4, 20], [23, 15.6], [0, 12.6]], 0x8c99bd, 20), 0x8c99bd),
+      paint(at(new THREE.BoxGeometry(40, 18, 27), 0, 28, 0), 0x8c99bd)
+    ]), lit({ vertexColors: true, roughness: .72, flatShading: true }));
+    foot.position.set(side * R, 0, 0);
     foot.castShadow = true; foot.receiveShadow = true;
     g.add(foot);
   }
@@ -636,10 +861,16 @@ export function buildLandmark(type) {
       g.add(cone);
     }
   } else if (type === 'mill') {
-    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(76, 84, 32, 14), mat(0x6f6350));
-    plinth.position.y = 16; plinth.castShadow = true; g.add(plinth);
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(44, 74, 300, 14), mat(0xa89577, .95));
-    tower.position.y = 150; tower.castShadow = true; g.add(tower);
+    /* The tower on a CURVE. A truncated cone is a lampshade; a mill batters
+       inwards fast at the bottom and straightens as it rises, and that curve is
+       most of what reads as masonry from half a land away. */
+    const plinth = new THREE.Mesh(spindle(
+      [[0, 0], [84, 0], [86, 6], [80, 26], [76, 32], [0, 32]], 0x6f6350, 20), mat(0x6f6350));
+    plinth.castShadow = true; g.add(plinth);
+    const tower = new THREE.Mesh(spindle(
+      [[0, 0], [74, 0], [70, 40], [62, 110], [54, 190], [48, 250], [44, 300], [0, 300]],
+      0xa89577, 20), mat(0xa89577, .95));
+    tower.castShadow = true; g.add(tower);
     // The balcony is small, but it is most of what says "windmill" rather than
     // "tower" when all you can see is a shape against the sky.
     const ring = new THREE.Mesh(new THREE.TorusGeometry(54, 6, 6, 18), mat(0x5c5140));
@@ -650,10 +881,14 @@ export function buildLandmark(type) {
     const sails = new THREE.Group();
     for (let i = 0; i < 4; i++) {
       const arm = new THREE.Group();
-      const spar = new THREE.Mesh(new THREE.BoxGeometry(8, 200, 8), mat(0x5c5140));
-      spar.position.y = 100; arm.add(spar);
-      const sheet = new THREE.Mesh(new THREE.BoxGeometry(32, 156, 4), mat(0xe8dcb8, .8));
-      sheet.position.set(22, 108, 0); sheet.castShadow = true; arm.add(sheet);
+      // A tapering spar with a slatted sail beside it, rather than two planks.
+      const spar = new THREE.Mesh(spindle(
+        [[0, 0], [5, 4], [4, 90], [2.6, 190], [0, 200]], 0x5c5140, 8), mat(0x5c5140));
+      arm.add(spar);
+      const sheet = new THREE.Mesh(panel(
+        [[-3, 30], [30, 26], [33, 60], [33, 150], [30, 184], [-3, 180]], 3.2, 0xe8dcb8,
+        { sharp: true, bevel: 1.0 }), mat(0xe8dcb8, .8));
+      sheet.castShadow = true; arm.add(sheet);
       arm.rotation.z = i * Math.PI / 2;
       sails.add(arm);
     }
@@ -663,11 +898,16 @@ export function buildLandmark(type) {
     const hub = new THREE.Mesh(new THREE.SphereGeometry(14, 10, 8), mat(0x4e4636));
     hub.position.set(0, 322, 62); g.add(hub);
 
-    const door = new THREE.Mesh(new THREE.BoxGeometry(34, 92, 12), mat(0x3a3226, 1));
-    door.position.set(0, 46, 72); g.add(door);
+    /* Arched at the top, which every opening cut in stone is, and which a box
+       cannot be. Built flat and stood up against the wall. */
+    const arched = (w, h, col) => panel(
+      [[-w, 0], [w, 0], [w, h - w], [w * .7, h - w * .3], [0, h], [-w * .7, h - w * .3], [-w, h - w]],
+      14, col, { bevel: 1.2 });
+    const door = new THREE.Mesh(arched(17, 92, 0x3a3226), mat(0x3a3226, 1));
+    door.position.set(0, 4, 70); g.add(door);
     for (const [ang, y] of [[.6, 210], [-.8, 262], [2.4, 150]]) {
-      const win = new THREE.Mesh(new THREE.BoxGeometry(20, 28, 14), mat(0x30291f, 1));
-      win.position.set(Math.sin(ang) * 54, y, Math.cos(ang) * 54);
+      const win = new THREE.Mesh(arched(10, 30, 0x30291f), mat(0x30291f, 1));
+      win.position.set(Math.sin(ang) * 52, y, Math.cos(ang) * 52);
       win.rotation.y = ang; g.add(win);
     }
   } else {
@@ -682,8 +922,10 @@ export function buildLandmark(type) {
     crown.geometry.computeVertexNormals();
     crown.position.y = 370; crown.castShadow = true; g.add(crown);
     for (const [ang, y] of [[0, 260], [2.1, 170], [4.0, 300]]) {
-      const win = new THREE.Mesh(new THREE.BoxGeometry(26, 44, 14), mat(0x252a33, 1));
-      win.position.set(Math.sin(ang) * 58, y, Math.cos(ang) * 58);
+      const win = new THREE.Mesh(panel(
+        [[-13, 0], [13, 0], [13, 30], [9, 40], [0, 44], [-9, 40], [-13, 30]],
+        14, 0x252a33, { bevel: 1.2 }), mat(0x252a33, 1));
+      win.position.set(Math.sin(ang) * 56, y, Math.cos(ang) * 56);
       win.rotation.y = ang;
       g.add(win);
     }
@@ -776,8 +1018,31 @@ export function buildFire() {
 
 export function buildStone() {
   const g = new THREE.Group();
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(30, 78, 15), solid(0x6a6f7a));
-  slab.position.y = 39;
+  /* A MENHIR, not a slab. This was a box thirty by seventy-eight, and a box
+     standing on end next to a boy has four hard vertical corners on it - the
+     most obviously manufactured thing in the whole wood, and one of the few he
+     walks right up to.
+
+     A turned outline gives it a weathered profile instead, and then the corners
+     are worn off by hand: each one pushed in by an amount that depends on where
+     it is, so the stone is lumpy in a way that stays the same every time the
+     game is opened. The hash is the same one the hills come out of. */
+  const geo = spindle([
+    [0, 0], [11, 0], [13, 6], [12.5, 24], [11, 46], [9.5, 64], [7, 74], [0, 78]
+  ], 0x6a6f7a, 9);
+  geo.scale(1.25, 1, .62);                 // a standing stone is a slab, not a post
+  {
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const n = hash2(Math.round(x * 3), Math.round(y * 2 + z * 5));
+      const k = .86 + n * .26;
+      pos.setXYZ(i, x * k, y + (n - .5) * 1.6, z * k);
+    }
+    geo.computeVertexNormals();
+  }
+  const slab = new THREE.Mesh(geo, lit({ vertexColors: true, roughness: .95 }));
+  slab.position.y = 0;
   slab.rotation.z = .04;
   slab.castShadow = true; slab.receiveShadow = true;
   g.add(slab);
@@ -812,14 +1077,27 @@ export function buildBoots() {
   const g = new THREE.Group();
   const stone = new THREE.Mesh(new THREE.CylinderGeometry(17, 19, 8, 8), solid(0x5f6672));
   stone.position.y = 4; stone.receiveShadow = true; g.add(stone);
+  /* A pair of boots, made the same way his own are. They were two boxes with a
+     third box for a toe, which is the shape of a boot only if you have been
+     told it is one. */
+  const bmat = lit({ vertexColors: true, roughness: .9 });
   for (const side of [-1, 1]) {
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(9, 17, 8), solid(0x8a5a33));
-    boot.position.set(0, 17, side * 6);
+    const boot = new THREE.Mesh(mergeGeometries([
+      // the shaft, flaring a little at the cuff
+      turned([[0, 0], [4.4, 0], [4.8, 10], [5.4, 15], [5.6, 17],
+              [4.4, 17], [4.2, 14], [3.6, 9], [3.4, 1], [0, .8]], 0x8a5a33, 14),
+      // the foot, pointing forward out of the bottom of it
+      paint(at((() => { const s = new THREE.SphereGeometry(3.4, 14, 10); s.scale(1.7, .62, .78); return s; })(),
+        2.6, 1.8, 0), 0x6d4526),
+      paint(at((() => { const s = new THREE.SphereGeometry(3.0, 12, 9); s.scale(1, .68, .8); return s; })(),
+        -1.4, 1.8, 0), 0x6d4526),
+      // and the turned-down cuff
+      turned([[0, 15.4], [5.9, 15.6], [6.1, 17.6], [0, 17.4]], 0x9c6a3e, 14)
+    ]), bmat);
+    boot.position.set(-1, 7.5, side * 6.5);
+    boot.rotation.y = side * .16;
     boot.castShadow = true;
     g.add(boot);
-    const toe = new THREE.Mesh(new THREE.BoxGeometry(12, 5, 9), solid(0x6d4526));
-    toe.position.set(2.5, -6, 0);
-    boot.add(toe);
   }
   const spark = new THREE.Mesh(new THREE.IcosahedronGeometry(2.6, 0), glow(0xf5d76e, 2.2));
   spark.position.y = 34;
