@@ -1119,6 +1119,9 @@ export function createRenderer(canvas, opts) {
       turnToward(g, m, s.p, (s.battle && s.battle.m === m) ? 1e9 : 340, s.dt || 1);
       const pulse = .7 + Math.sin(t * 4 + m.x) * .3;
       for (const e of g.userData.eyes || []) e.scale.setScalar(pulse);
+      // and the ones with wings beat them, each starting at its own moment so
+      // a land full of them does not look like one thing copied out five times
+      if (g.userData.wings) F.flapWings(g.userData, t * g.userData.flapRate + m.x);
     }
 
     // The Guardian, which only exists once it has been woken.

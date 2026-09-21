@@ -65,7 +65,7 @@
 <script type="module">
 import * as THREE from './vendor/three.module.min.js';
 import * as W from './world3d.js';
-import { FIGURES } from './figures.js';
+import { FIGURES, flapWings } from './figures.js';
 
 const err = document.getElementById('err');
 window.addEventListener('error', e => {
@@ -330,7 +330,13 @@ let last = performance.now();
 renderer.setAnimationLoop(now => {
   const dt = Math.min(3, (now - last) / 16.667); last = now;
   if (spinning) holder.rotation.y += 0.0055 * dt;
-  if (walking) { walkPhase += .24 * dt; pose(current.userData, walkPhase, 1); }
+  if (walking) {
+    walkPhase += .24 * dt;
+    pose(current.userData, walkPhase, 1);
+    // Walk means "move the way you move" - for a thing with wings, that is
+    // beating them rather than putting one foot in front of the other.
+    flapWings(current.userData, walkPhase * 4);
+  }
 
   // Whatever glows in the game glows here - it just has no bloom pass to
   // spill into, which is worth remembering when judging an eye or an orb.
