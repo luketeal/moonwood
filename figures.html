@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Moonwood — Figures</title>
+<!-- ---------------------------------------------------------------------------
+     THE FIGURE VIEWER
+
+     Every character in the game, one at a time, under the same moon and the
+     same ink line the game uses - because a figure judged under a plain white
+     light is a figure judged under a light it will never be seen in.
+
+     It exists because the alternative is walking across a land to look at one
+     creature, and then walking back across it to look at the next. There are
+     sixteen monsters. That is not a way to work on sixteen monsters.
+
+     Drag to turn the figure and to look up and down it, wheel or pinch to come
+     closer, and the arrows step through the cast. Turntable turns it on its own
+     so a shape can be watched all the way round without being held.
+---------------------------------------------------------------------------- -->
+<style>
+  *{-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
+  html,body{margin:0;height:100%;background:#06080f;color:#dfe6f2;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+  canvas:active{cursor:grabbing}
+  #bar{position:fixed;left:0;right:0;bottom:0;padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+    display:flex;align-items:center;gap:10px;justify-content:center;flex-wrap:wrap;
+    background:linear-gradient(#0b102000,#0b1020ee 42%);pointer-events:none}
+  #bar>*{pointer-events:auto}
+  button{font:inherit;font-size:14px;color:#dfe6f2;background:#1b2440;border:1px solid #2f3c63;
+    border-radius:11px;padding:9px 14px;cursor:pointer}
+  button:hover{background:#243059}
+  button.on{background:#6d46b5;border-color:#8257d6}
+  select{font:inherit;font-size:14px;color:#dfe6f2;background:#1b2440;border:1px solid #2f3c63;
+    border-radius:11px;padding:9px 12px;cursor:pointer}
+  #name{position:fixed;top:0;left:0;right:0;padding:16px 14px calc(16px + env(safe-area-inset-top));
+    text-align:center;pointer-events:none;
+    background:linear-gradient(#0b1020dd,#0b102000)}
+  #name b{font-size:19px;letter-spacing:.4px}
+  #name span{display:block;font-size:12px;color:#8e9bbd;margin-top:3px}
+  #hint{position:fixed;left:14px;bottom:78px;font-size:11px;color:#6d799b}
+  #err{position:fixed;inset:0;display:none;place-items:center;padding:30px;text-align:center;
+    color:#ff9a9a;font-size:14px;line-height:1.6}
+  a{color:#a78bfa}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="name"><b id="nm">—</b><span id="note"></span></div>
+<div id="hint">drag to turn · wheel to zoom · double-click to reset</div>
+<div id="bar">
+  <button id="prev">◀</button>
+  <select id="pick"></select>
+  <button id="next">▶</button>
+  <button id="spin" class="on">Turntable</button>
+  <button id="walkb">Walk</button>
+  <button id="ground">Floor</button>
+  <button id="inkb" class="on">Ink</button>
+  <a href="index.html"><button>← Game</button></a>
+</div>
+<div id="err"></div>
+
+<script type="module">
+import * as THREE from './vendor/three.module.min.js';
+import * as W from './world3d.js';
+import { FIGURES, flapWings } from './figures.js';
+
+const err = document.getElementById('err');
+window.addEventListener('error', e => {
+  err.style.display = 'grid';
+  err.textContent = 'Could not start: ' + (e.message || e);
+});
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setClearColor(0x06080f, 1);
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1.3 * 1.15;         // the game's exposure
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(42, 1, 1, 4000);
+
+/* THE SAME LIGHT THE GAME USES. A cel ramp of three bands, an ink line of the
+   same width and the same not-quite-black blue, one low moon and a little fill.
+   These numbers are GRADE in render3d.js; they are repeated rather than shared
+   because that module builds a whole world on the way past, and what is wanted
+   here is only its look. If the grade changes there, change it here. */
+const BANDS = [0.22, 0.62, 1.00], INK = 0x0d1a2b, INK_W = 1.8;
+const ramp = W.toonRamp(BANDS);
+W.setStyle({ ramp, inkColour: INK, inkWidth: INK_W });
+
+const moon = new THREE.DirectionalLight(0xdfe8ff, 2.0);
+moon.position.set(-160, 260, 150);
+moon.castShadow = true;
+moon.shadow.mapSize.set(1536, 1536);
+{
+  const c = moon.shadow.camera, d = 90;
+  c.left = -d; c.right = d; c.top = d; c.bottom = -d; c.near = 20; c.far = 700;
+}
+scene.add(moon, moon.target);
+scene.add(new THREE.HemisphereLight(0x8fa8d8, 0x2a2438, 0.42));
+
+/* A floor, so the figure is standing on something rather than floating in a
+   void. It catches the shadow, which is most of what tells you where the feet
+   actually are. It can be turned off, because a silhouette is easier to judge
+   against nothing at all. */
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(180, 48),
+  new THREE.MeshToonMaterial({ color: 0x2c3550, gradientMap: ramp })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+/* ---------------------------------------------------------------------------
+   THE CAMERA YOU DRIVE
+
+   Orbit written out by hand rather than pulled in, because it is thirty lines
+   and the game vendors nothing it does not use.
+
+   `yaw` goes round, `pitch` goes up and over - stopped just short of either
+   pole, since a camera directly overhead has no idea which way up it is -
+   and `dist` comes in and out. `target` is the height it looks at, which
+   follows the figure so a tall one is framed like a short one.
+--------------------------------------------------------------------------- */
+const cam = { yaw: 0.9, pitch: 0.16, dist: 150, target: 35 };
+const HOME = { ...cam };
+
+function place() {
+  const cp = Math.cos(cam.pitch);
+  camera.position.set(
+    Math.sin(cam.yaw) * cp * cam.dist,
+    cam.target + Math.sin(cam.pitch) * cam.dist,
+    Math.cos(cam.yaw) * cp * cam.dist
+  );
+  camera.lookAt(0, cam.target, 0);
+}
+
+const pointers = new Map();
+let pinch = 0;
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) pinch = spread();
+});
+canvas.addEventListener('pointermove', e => {
+  const prev = pointers.get(e.pointerId);
+  if (!prev) return;
+  const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+  prev.x = e.clientX; prev.y = e.clientY;
+
+  if (pointers.size === 1) {
+    cam.yaw -= dx * 0.008;
+    cam.pitch = clamp(cam.pitch + dy * 0.006, -0.55, 1.25);
+    spinning = false; spinBtn.classList.remove('on');
+  } else if (pointers.size === 2) {
+    const now = spread();
+    if (pinch) zoom(pinch / now);
+    pinch = now;
+  }
+});
+for (const ev of ['pointerup', 'pointercancel']) {
+  canvas.addEventListener(ev, e => { pointers.delete(e.pointerId); pinch = 0; });
+}
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom(Math.exp(e.deltaY * 0.0012));
+}, { passive: false });
+canvas.addEventListener('dblclick', () => Object.assign(cam, HOME, { target: HOME.target }));
+
+function spread() {
+  const [a, b] = [...pointers.values()];
+  return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+}
+function zoom(f) { cam.dist = clamp(cam.dist * f, 28, 620); }
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+/* ---------------------------------------------------------------------------
+   THE CAST
+--------------------------------------------------------------------------- */
+/* Two groups, not one. `holder` turns, and `centrer` inside it shifts the
+   figure so that whatever point we want to look at sits exactly on the axis
+   holder turns about. Done the other way round - shifting the turning group -
+   the figure orbits the middle of the picture instead of spinning on the spot,
+   which a hound with a long tail does very visibly. */
+const holder = new THREE.Group();
+const centrer = new THREE.Group();
+holder.add(centrer);
+scene.add(holder);
+
+const pick = document.getElementById('pick');
+for (let i = 0; i < FIGURES.length; i++) {
+  const o = document.createElement('option');
+  o.value = String(i);
+  o.textContent = FIGURES[i].name;
+  pick.appendChild(o);
+}
+
+let idx = 0, current = null, rig = null;
+
+function show(i) {
+  idx = (i + FIGURES.length) % FIGURES.length;
+  const f = FIGURES[idx];
+  if (current) {
+    centrer.remove(current);
+    current.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+  }
+  current = f.make();
+  current.traverse(o => { if (o.isMesh && !o.userData.isInk) o.castShadow = true; });
+  centrer.add(current);
+  rig = current.userData && current.userData.rig;
+
+  /* Frame whatever it is. Measured on its LONGEST side, not its height: a
+     hound is half again as long as it is tall, and framed on height it walked
+     out of both edges of the picture. */
+  const box = new THREE.Box3().setFromObject(current);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const reach = Math.max(12, size.x, size.y, size.z);
+  cam.target = box.min.y + size.y * 0.55;
+  cam.dist = reach * 2.4;
+  /* The turntable spins the figure about the scene's up axis, so it has to be
+     looked at from the axis it spins about - centred in x and z, or a long
+     animal swings in and out of frame as it goes round. */
+  centrer.position.set(-(box.min.x + size.x / 2), 0, -(box.min.z + size.z / 2));
+  HOME.target = cam.target; HOME.dist = cam.dist;
+
+  document.getElementById('nm').textContent = f.name;
+  document.getElementById('note').textContent = f.note;
+  pick.value = String(idx);
+  walkPhase = 0;
+}
+
+const spinBtn = document.getElementById('spin');
+const walkBtn = document.getElementById('walkb');
+const groundBtn = document.getElementById('ground');
+let spinning = true, walking = false, walkPhase = 0;
+
+document.getElementById('prev').onclick = () => show(idx - 1);
+document.getElementById('next').onclick = () => show(idx + 1);
+pick.onchange = () => show(+pick.value);
+spinBtn.onclick = () => { spinning = !spinning; spinBtn.classList.toggle('on', spinning); };
+walkBtn.onclick = () => {
+  walking = !walking;
+  walkBtn.classList.toggle('on', walking);
+  if (!walking && rig) rest();
+};
+groundBtn.onclick = () => {
+  floor.visible = !floor.visible;
+  groundBtn.classList.toggle('on', !floor.visible);
+};
+/* The line on and off. Worth having: the line is drawn round each separate
+   piece of a figure, so when something looks wrong it matters a great deal
+   whether the shape is wrong or only the line round it is. */
+const inkBtn = document.getElementById('inkb');
+let inked = true;
+inkBtn.onclick = () => {
+  inked = !inked;
+  inkBtn.classList.toggle('on', inked);
+  W.setStyle({ ramp, inkColour: INK, inkWidth: inked ? INK_W : 0 });
+  show(idx);                       // the line is built into the figure, so rebuild it
+};
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft') show(idx - 1);
+  else if (e.key === 'ArrowRight') show(idx + 1);
+  else if (e.key === ' ') { e.preventDefault(); spinBtn.click(); }
+});
+
+/* The same walk the game runs, so what is seen here is what will be seen
+   there. Anything without a rig just stands still and turns. */
+function rest() {
+  if (!rig) return;
+  for (const n of ['hipL', 'hipR', 'kneeL', 'kneeR', 'ankleL', 'ankleR',
+                   'shoulderL', 'shoulderR', 'elbowL', 'elbowR']) {
+    if (rig[n]) rig[n].rotation.set(0, 0, 0);
+  }
+}
+
+function pose(u, ph0, gait) {
+  if (!u || !u.legs) return;
+  const swing = gait * .62;
+  for (let i = 0; i < 2; i++) {
+    const ph = ph0 + (i ? Math.PI : 0);
+    const thigh = Math.sin(ph) * swing;
+    const knee = -.06 - (.10 + .80 * Math.max(0, Math.cos(ph))) * gait;
+    u.legs[i].rotation.z = thigh;
+    if (u.knees) u.knees[i].rotation.z = knee;
+    if (u.ankles) u.ankles[i].rotation.z = -(thigh + knee) * .5;
+    const aph = ph + Math.PI;
+    u.arms[i].rotation.z = Math.sin(aph) * swing * .55;
+    if (u.elbows) u.elbows[i].rotation.z = .16 + .20 * Math.max(0, Math.sin(aph)) * gait;
+  }
+  if (u.cloak) {
+    u.cloak.rotation.z = Math.sin(ph0 * .5) * .04 + gait * .07;
+    u.cloak.rotation.x = Math.sin(ph0) * .05 * gait;
+  }
+}
+
+/* A way in for the shot harness in tools/. It sets the camera and the walk
+   exactly, so two sets of pictures of the same figure can be put side by side
+   without anybody having to hold the mouse still between them. */
+window.__view = o => {
+  Object.assign(cam, o);
+  spinning = false; spinBtn.classList.remove('on');
+};
+window.__walkTo = ph => {
+  walking = false; walkBtn.classList.remove('on');
+  walkPhase = ph;
+  pose(current.userData, ph, ph === null ? 0 : 1);
+};
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+show(0);
+
+let last = performance.now();
+renderer.setAnimationLoop(now => {
+  const dt = Math.min(3, (now - last) / 16.667); last = now;
+  if (spinning) holder.rotation.y += 0.0055 * dt;
+  if (walking) {
+    walkPhase += .24 * dt;
+    pose(current.userData, walkPhase, 1);
+    // Walk means "move the way you move" - for a thing with wings, that is
+    // beating them rather than putting one foot in front of the other.
+    flapWings(current.userData, walkPhase * 4);
+  }
+
+  // Whatever glows in the game glows here - it just has no bloom pass to
+  // spill into, which is worth remembering when judging an eye or an orb.
+  const u = current.userData || {};
+  if (u.orb) u.orb.position.y = 60 + Math.sin(now / 1000 * 2.6) * 2;
+  if (u.spark) u.spark.position.y = 52 + Math.sin(now / 1000 * 3.3) * 3;
+  if (u.ring) u.ring.rotation.y = now / 1000 * .8;
+
+  moon.target.position.set(0, cam.target, 0);
+  place();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

@@ -23,6 +23,7 @@ import { RenderPass } from './vendor/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from './vendor/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from './vendor/postprocessing/OutputPass.js';
 import * as W from './world3d.js';
+import * as F from './figures.js';
 
 /* ---------------------------------------------------------------------------
    THE THREE MOODS
@@ -48,7 +49,14 @@ const MOOD = {
   sunfield: {          // a big warm low moon over open country, almost dusk
     az: 2.55, el: 0.30, key: 0xffcf9a, keyI: 3.2, moonCol: [1.00, 0.88, 0.70], moonGain: 7.0,
     hemiSky: 0x8f6fa8, hemiGnd: 0x5c5a2e, hemiI: 2.00, rim: 0xd6a173, rimI: 0.70,
-    fog: 0.00075, exposure: 1.36, wind: 0.75, undergrowth: 1.7, grass: 1.35, mist: 0
+    /* Open country should be grassier than a wood, and it was - but the two
+       settings MULTIPLY. Seven-tenths more tufts, each a third bigger, is
+       about three times the cover, and it came out as a field of wheat he had
+       to wade through with his feet lost in it. `bare` opens it up as well:
+       a meadow has worn patches and scuffed ground in it, and that negative
+       space is as much of what reads as grassland as the grass is. */
+    fog: 0.00075, exposure: 1.36, wind: 0.75,
+    undergrowth: 1.25, grass: 1.10, bare: 0.56, mist: 0
   },
   ruins: {             // high, colourless and smothered
     az: 2.10, el: 0.75, key: 0x9db4d8, keyI: 2.1, moonCol: [0.86, 0.90, 0.98], moonGain: 4.0,
@@ -650,7 +658,9 @@ export function createRenderer(canvas, opts) {
     const sow = Math.round(Q.undergrowth * (MOOD[L.id] ? MOOD[L.id].undergrowth : 1));
     for (let i = 0; i < sow; i++) {
       const x = (i * 733.7) % L.w, y = (i * 419.3) % L.h;
-      if (W.fbm(x / 340 + 5, y / 340 + 9, 2) < .46) continue;   // they grow in patches, not evenly
+      // They grow in patches, not evenly; how much bare ground is left between
+      // those patches is the land's own business.
+      if (W.fbm(x / 340 + 5, y / 340 + 9, 2) < ((MOOD[L.id] && MOOD[L.id].bare) || .46)) continue;
       if (terrain.height(x, y) < -12) continue;                 // and not in the river
       tufts.push({ x, y, s: (.95 + ((i * 11) % 70) / 100) * (MOOD[L.id] ? (MOOD[L.id].grass || 1) : 1) });
     }
@@ -661,7 +671,8 @@ export function createRenderer(canvas, opts) {
       tufts.forEach((t, i) => {
         dummy.position.set(t.x, terrain.height(t.x, t.y) - 1, t.y);
         dummy.rotation.set(0, (t.x + t.y) % 6.283, 0);
-        dummy.scale.set(t.s, t.s * (.8 + ((t.x % 30) / 50)), t.s);
+        // A blade at the tall end of this used to come up past his thigh.
+        dummy.scale.set(t.s, t.s * (.72 + ((t.x % 30) / 72)), t.s);
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
       });
@@ -814,25 +825,25 @@ export function createRenderer(canvas, opts) {
     const A = land.actors;
     const h = (x, y) => land.terrain.height(x, y);
 
-    A.player = W.buildPlayer();
+    A.player = F.buildPlayer();
     land.root.add(A.player);
     A.luna = null;
     A.creatures = {}; A.monsters = {}; A.critters = []; A.shards = {}; A.finds = {}; A.berries = {};
 
     for (const c of L.creatures) {
-      const g = W.buildCreature(c.kind);
+      const g = F.buildCreature(c);
       W.setPos(g, c.x, c.y, h(c.x, c.y));
       g.rotation.y = (c.x % 6.283);
       land.root.add(g); A.creatures[c.id] = g;
     }
     for (const m of L.monsters) {
-      const g = W.buildMonster(false);
+      const g = F.buildMonster(m);
       W.setPos(g, m.x, m.y, h(m.x, m.y));
       g.rotation.y = (m.x % 6.283);
       land.root.add(g); A.monsters[m.id] = g;
     }
     for (const c of L.critters) {
-      const g = W.buildCritter(c.kind);
+      const g = F.buildCritter(c.kind);
       W.setPos(g, c.x, c.y, h(c.x, c.y));
       land.root.add(g); A.critters.push({ g, c });
     }
@@ -968,6 +979,9 @@ export function createRenderer(canvas, opts) {
   const stat = { draws: 0, tris: 0, buildMs: 0 };
 
   let frames = 0;
+  // The walk, between frames: where the walk phase was last time, and how much
+  // of a stride he is currently taking. See THE WALK, further down.
+  let lastBob = 0, gait = 0;
   function render(s) {
     const L = s.L, t = s.now / 1000;
     frames++;
@@ -1035,25 +1049,61 @@ export function createRenderer(canvas, opts) {
       c.updateProjectionMatrix();
     }
 
-    // Him.
+    // Him. (`lastBob` and `gait` are kept between frames - see THE WALK below.)
     const pz = gh(s.p.x, s.p.y);
     A.player.position.set(s.p.x, pz, s.p.y);
     heroGlow.position.set(s.p.x, pz + 150, s.p.y);
     A.player.rotation.y = W.yaw(s.p.a);
+    /* THE WALK
+
+       He has knees and elbows now, so the walk is a walk rather than a pair of
+       boards rocking. The shape of it:
+
+         the THIGH swings back and forth, as it always did;
+         the KNEE bends ONE WAY only - a knee that bends backwards reads as a
+           broken leg instantly - and bends most as the leg swings through
+           underneath him, which is what stops the foot ploughing the ground;
+         the ANKLE takes back about half of what the thigh and knee did, so the
+           sole stays roughly level instead of pointing wherever the shin does;
+         the ELBOW keeps a standing bend and tightens on the forward swing.
+
+       How hard he is walking is read off how fast the walk phase is turning
+       over rather than from a flag, because nothing tells the renderer whether
+       he is moving: the game advances `bob` by .24 a frame when he walks and
+       .03 when he stands. Smoothed, that becomes `gait`, which is 0 standing
+       and 1 walking and slides between the two - so he eases to a halt rather
+       than stopping mid-stride with one leg in the air. */
     {
-      const step = Math.sin(s.p.bob), u = A.player.userData;
-      u.legs[0].rotation.z = step * .55;
-      u.legs[1].rotation.z = -step * .55;
-      u.arms[0].rotation.z = -step * .45;      // arms swing against the legs
-      u.arms[1].rotation.z = step * .45;
-      u.cloak.position.y = 36 + Math.abs(step) * 1.6;
-      u.cloak.rotation.z = Math.sin(s.p.bob * .5) * .05;
+      const u = A.player.userData, ph0 = s.p.bob, dt = s.dt || 1;
+      const rate = (ph0 - lastBob) / Math.max(1e-4, dt);
+      lastBob = ph0;
+      const want = Math.min(1, Math.max(0, (rate - .05) / .17));
+      gait += (want - gait) * Math.min(1, dt * .22);
+
+      const swing = gait * .62;
+      for (let i = 0; i < 2; i++) {
+        const ph = ph0 + (i ? Math.PI : 0);
+        const thigh = Math.sin(ph) * swing;
+        const knee = -.06 - (.10 + .80 * Math.max(0, Math.cos(ph))) * gait;
+        u.legs[i].rotation.z = thigh;
+        u.knees[i].rotation.z = knee;
+        u.ankles[i].rotation.z = -(thigh + knee) * .5;
+
+        const aph = ph + Math.PI;                  // arms swing against the legs
+        u.arms[i].rotation.z = Math.sin(aph) * swing * .55;
+        u.elbows[i].rotation.z = .16 + .20 * Math.max(0, Math.sin(aph)) * gait;
+      }
+      // The cloak hangs off his chest, so it sways rather than being posed.
+      u.cloak.rotation.z = Math.sin(ph0 * .5) * .04 + gait * .07;
+      u.cloak.rotation.x = Math.sin(ph0) * .05 * gait;
+      // and he rises a little on each step
+      A.player.position.y = pz + Math.abs(Math.sin(ph0)) * 1.4 * gait;
     }
 
     // Luna waits in Moonwood.
     if (s.npc.land === L.id) {
       if (!A.luna) {
-        A.luna = W.buildLuna();
+        A.luna = F.buildLuna();
         W.setPos(A.luna, s.npc.x, s.npc.y, gh(s.npc.x, s.npc.y));
         land.root.add(A.luna);
       }
@@ -1078,13 +1128,21 @@ export function createRenderer(canvas, opts) {
       g.position.y = gh(m.x, m.y) + Math.sin(t * 1.9 + m.x) * 2.5;
       turnToward(g, m, s.p, (s.battle && s.battle.m === m) ? 1e9 : 340, s.dt || 1);
       const pulse = .7 + Math.sin(t * 4 + m.x) * .3;
-      for (const e of g.userData.eyes) e.scale.setScalar(pulse);
+      for (const e of g.userData.eyes || []) e.scale.setScalar(pulse);
+      // and the ones with wings beat them, each starting at its own moment so
+      // a land full of them does not look like one thing copied out five times
+      if (g.userData.wings) F.flapWings(g.userData, t * g.userData.flapRate + m.x);
+      // and the dust devil turns on itself, with its grit going the other way
+      if (g.userData.spin) {
+        g.userData.spin.rotation.y = t * 1.5 + m.x;
+        g.userData.grit.rotation.y = -t * .9 + m.x;
+      }
     }
 
     // The Guardian, which only exists once it has been woken.
     if (s.battle && s.battle.m.boss) {
       const m = s.battle.m;
-      if (!A.boss) { A.boss = W.buildMonster(true); land.root.add(A.boss); }
+      if (!A.boss) { A.boss = F.buildMonster(m); land.root.add(A.boss); }
       A.boss.visible = true;
       A.boss.position.set(m.x, gh(m.x, m.y) + Math.sin(t * 1.4) * 4, m.y);
       turnToward(A.boss, m, s.p, 1e9, s.dt || 1);
@@ -1096,11 +1154,8 @@ export function createRenderer(canvas, opts) {
       const ph = t * 3.8 + c.ph;
       g.position.set(c.x, gh(c.x, c.y) + Math.abs(Math.sin(ph)) * (3 + c.hop * 7), c.y);
       g.rotation.y = W.yaw(c.dir || 0);
-      if (g.userData.wings) {
-        const w = Math.sin(ph * 3) * .8;
-        g.userData.wings[0].rotation.x = w;
-        g.userData.wings[1].rotation.x = -w;
-      }
+      // The bat beats its wings; the frog and the rabbit only hop.
+      if (g.userData.wings) F.flapWings(g.userData, ph * 3);
     }
 
     // Shards turning in the air.
