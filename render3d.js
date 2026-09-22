@@ -49,7 +49,14 @@ const MOOD = {
   sunfield: {          // a big warm low moon over open country, almost dusk
     az: 2.55, el: 0.30, key: 0xffcf9a, keyI: 3.2, moonCol: [1.00, 0.88, 0.70], moonGain: 7.0,
     hemiSky: 0x8f6fa8, hemiGnd: 0x5c5a2e, hemiI: 2.00, rim: 0xd6a173, rimI: 0.70,
-    fog: 0.00075, exposure: 1.36, wind: 0.75, undergrowth: 1.7, grass: 1.35, mist: 0
+    /* Open country should be grassier than a wood, and it was - but the two
+       settings MULTIPLY. Seven-tenths more tufts, each a third bigger, is
+       about three times the cover, and it came out as a field of wheat he had
+       to wade through with his feet lost in it. `bare` opens it up as well:
+       a meadow has worn patches and scuffed ground in it, and that negative
+       space is as much of what reads as grassland as the grass is. */
+    fog: 0.00075, exposure: 1.36, wind: 0.75,
+    undergrowth: 1.25, grass: 1.10, bare: 0.56, mist: 0
   },
   ruins: {             // high, colourless and smothered
     az: 2.10, el: 0.75, key: 0x9db4d8, keyI: 2.1, moonCol: [0.86, 0.90, 0.98], moonGain: 4.0,
@@ -651,7 +658,9 @@ export function createRenderer(canvas, opts) {
     const sow = Math.round(Q.undergrowth * (MOOD[L.id] ? MOOD[L.id].undergrowth : 1));
     for (let i = 0; i < sow; i++) {
       const x = (i * 733.7) % L.w, y = (i * 419.3) % L.h;
-      if (W.fbm(x / 340 + 5, y / 340 + 9, 2) < .46) continue;   // they grow in patches, not evenly
+      // They grow in patches, not evenly; how much bare ground is left between
+      // those patches is the land's own business.
+      if (W.fbm(x / 340 + 5, y / 340 + 9, 2) < ((MOOD[L.id] && MOOD[L.id].bare) || .46)) continue;
       if (terrain.height(x, y) < -12) continue;                 // and not in the river
       tufts.push({ x, y, s: (.95 + ((i * 11) % 70) / 100) * (MOOD[L.id] ? (MOOD[L.id].grass || 1) : 1) });
     }
@@ -662,7 +671,8 @@ export function createRenderer(canvas, opts) {
       tufts.forEach((t, i) => {
         dummy.position.set(t.x, terrain.height(t.x, t.y) - 1, t.y);
         dummy.rotation.set(0, (t.x + t.y) % 6.283, 0);
-        dummy.scale.set(t.s, t.s * (.8 + ((t.x % 30) / 50)), t.s);
+        // A blade at the tall end of this used to come up past his thigh.
+        dummy.scale.set(t.s, t.s * (.72 + ((t.x % 30) / 72)), t.s);
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
       });

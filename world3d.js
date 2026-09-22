@@ -768,9 +768,22 @@ export function propGeometry(type) {
       g.scale(.86, 1, 1.05);
       return at(g, x, 0, 0);
     };
-    const span = new THREE.TorusGeometry(46, 12, 8, 18, Math.PI * .62);
-    span.rotateZ(Math.PI * .19);
-    return mergeGeometries([pier(140, -46), pier(104, 46), paint(at(span, 0, 140, 0), 0x67635b)]);
+    /* THE SPAN SPRINGS FROM THE PIER. It did not before: a half-circle of
+       radius 46 was hung at y=140, which put its lowest point at 159 - a
+       clean stone rainbow floating nineteen above the top of its own leg, and
+       fifty-five above the short one. From a distance it read as rubble in
+       the sky, which is exactly what you said it looked like.
+
+       Now it starts ON the tall pier and breaks off over the gap, which is
+       what a ruined arch does. The sums: the centre of the circle is put at
+       the springing height, so the pier top is the point at 180 degrees round
+       it. The arc is swept so that its LAST point lands there, which means
+       turning it by (180 - arc) first. Everything else follows. */
+    const TALL = 140, R = 46, sweep = Math.PI * 140 / 180;
+    const span = new THREE.TorusGeometry(R, 12, 8, 20, sweep);
+    span.rotateZ(Math.PI - sweep);
+    at(span, 0, TALL, 0);
+    return mergeGeometries([pier(TALL, -R), pier(104, R), paint(span, 0x67635b)]);
   }
   // rubble
   const bits = [[-8, 7, 2, 9], [7, 6, -3, 8], [0, 15, 1, 6.5], [-2, 5, -8, 5]];
