@@ -34,7 +34,41 @@ Walking into the Star Gate in any land opens it up: pick a land and go. He can
 wander back and forth as often as he likes, in any order, and the gate shows how
 many shards he has found in each.
 
-Bring all nine back to the gate and the Gate Guardian wakes up. Beating it ends
+## Sealed shards
+
+No shard is lying about in the open. Every one is **sealed**, and while it is
+sealed it cannot be seen, gives off no light, and the compass does not know it
+is there. Each land has one shard behind each kind of seal:
+
+- **Held by a monster** - the Bogling, the Old Scarecrow and the Stone Golem
+  each have one. Beat it and the shard drops where it stood
+- **Waiting for a creature** - these only show themselves to a creature from
+  *another* land: the Dawn Shard (Moonwood) wants the Sunmoth's light, the Wind
+  Shard (Sunfield) wants the Stonepup to dig, and the Echo Shard (Ruins) wants
+  the Brookfin to fill a dry well
+- **Asleep under the runes** - three rune stones stand round the edge of every
+  land, carved with one, two and three marks. Wake them in that order and the
+  shard appears. Touch one out of order and every rune in that land goes dark
+  again
+
+The campfires and standing stones say which shard is which and where it is.
+Standing on a spot where a sealed shard is hidden and pressing ACTION gives a
+clue about what it is waiting for.
+
+## The beacons
+
+Finding nine shards is not enough to open the gate. Every land has a **beacon**,
+a stone bowl at the foot of its landmark, and the Gate Guardian only wakes once
+all three are burning. A beacon will only light when:
+
+- all three of that land's shards have been found, **and**
+- every monster in that land has been beaten
+
+A lit beacon sends a column of light into the sky, and the gate grows brighter
+with every shard and every beacon.
+
+Bring all nine shards back to the gate with every beacon burning, and the Gate
+Guardian wakes up. Beating it ends
 the game. Losing to it costs nothing - he wakes at the foot of the gate, healed,
 with the Guardian a little more worn down than before, and can walk straight
 back in.
@@ -49,19 +83,22 @@ Walking is worth something. Scattered through the lands:
   land, and they glow from a long way off
 - **Star seeds** - three hidden in each land. Each one is +1 maximum health,
   forever
-- **Standing stones** - carved hints: where a shard is, or what a monster fears
+- **Standing stones** - carved hints: where a shard is, how to break its seal,
+  or what a monster fears
 - **Swift boots** - one pair in each land. Each pair makes him permanently
   quicker, so the more he explores the less the walking costs him
 - **Frogs, rabbits and bats** - they hop away from him and do nothing else
 
-None of it is needed to finish the game. The nine shards are the only thing
-that moves the story on, so nothing important can be missed.
+None of it is needed to finish the game, although the stones and the fires
+are the easiest way to work out where the sealed shards are.
 
 ## Finding your way
 
-A compass sits above the buttons, pointing at the nearest shard he has not found
-in this land - or at the Star Gate once all three are his. It says "close" when
-he is nearly on top of it.
+A compass sits above the buttons. It only points at shards whose seal has been
+broken. While every shard left in a land is still sealed it spins and says
+"Shards sealed - search". Once all three shards in a land are found it points
+at that land's beacon, then at the Star Gate. It says "close" when he is nearly
+on top of whatever it is pointing at.
 
 ## Fights
 

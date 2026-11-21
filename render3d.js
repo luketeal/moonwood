@@ -854,9 +854,10 @@ export function createRenderer(canvas, opts) {
     }
     for (const f of L.finds) {
       const g = f.type === 'seed' ? W.buildSeed() : f.type === 'fire' ? W.buildFire()
-        : f.type === 'stone' ? W.buildStone() : W.buildBoots();
+        : f.type === 'stone' ? W.buildStone() : f.type === 'rune' ? W.buildRune(f.n)
+        : f.type === 'beacon' ? W.buildBeacon() : W.buildBoots();
       W.setPos(g, f.x, f.y, h(f.x, f.y) + (f.type === 'seed' ? 32 : 0));
-      if (f.type === 'stone') g.rotation.y = (f.x % 6.283);
+      if (f.type === 'stone' || f.type === 'rune') g.rotation.y = (f.x % 6.283);
       land.root.add(g); A.finds[f.id] = g;
     }
     for (const b of L.berries) {
@@ -1161,7 +1162,8 @@ export function createRenderer(canvas, opts) {
     // Shards turning in the air.
     for (const sh of L.shards) {
       const g = A.shards[sh.id];
-      g.visible = !s.picked.has(sh.id);
+      // A shard that is still sealed is not there at all, as far as he can see.
+      g.visible = !s.picked.has(sh.id) && (!s.shardOpen || s.shardOpen(sh));
       if (!g.visible) continue;
       g.position.y = gh(sh.x, sh.y) + 40 + Math.sin(t * 2 + sh.x) * 7;
       g.rotation.y = t * 1.1;
@@ -1181,6 +1183,16 @@ export function createRenderer(canvas, opts) {
         g.userData.flame.scale.set(1, flick, 1);
         g.userData.core.scale.set(1, flick * 1.05, 1);
         g.userData.flame.rotation.y = t * 2.2;
+      } else if (f.type === 'rune') {
+        W.setRuneLit(g, s.found.has(f.id));
+        if (g.userData.on) g.userData.orb.position.y = 96 + Math.sin(t * 2.2 + f.x) * 4;
+      } else if (f.type === 'beacon') {
+        const on = s.found.has(f.id), u = g.userData;
+        u.flame.visible = u.beam.visible = on;
+        if (on) {
+          u.flame.rotation.y = t * 1.3;
+          u.beam.material.opacity = .26 + Math.sin(t * 1.7 + f.x) * .06;
+        }
       } else if (f.type === 'boots') {
         g.userData.spark.position.y = 34 + Math.sin(t * 2.4 + f.x) * 2;
       }
@@ -1195,7 +1207,9 @@ export function createRenderer(canvas, opts) {
 
     // The gate brightens as the shards come home.
     {
-      const lit = s.picked.size / 9, full = s.picked.size >= 9;
+      // Nine shards and three beacons: the gate is only full once all twelve are done.
+      const beacons = s.beaconsLit ? s.beaconsLit() : 3;
+      const lit = (s.picked.size + beacons) / 12, full = s.picked.size >= 9 && beacons >= 3;
       const gate = land.gate;
       gate.portal.material.opacity = .22 + lit * .5;
       gate.portal.material.color.setHex(full ? 0xe8dcff : 0x6d5ab2);
@@ -1237,8 +1251,12 @@ export function createRenderer(canvas, opts) {
       lampWants.push({ x: f.x, y: f.y, z: gh(f.x, f.y) + 26, c: 0xffa94d, i: 5200 * flick, d: 620 });
     }
     for (const sh of L.shards) {
-      if (s.picked.has(sh.id)) continue;
+      if (s.picked.has(sh.id) || (s.shardOpen && !s.shardOpen(sh))) continue;
       lampWants.push({ x: sh.x, y: sh.y, z: gh(sh.x, sh.y) + 46, c: 0xf7df78, i: 1300, d: 420 });
+    }
+    for (const f of L.finds) {
+      if (f.type === 'beacon' && s.found.has(f.id))
+        lampWants.push({ x: f.x, y: f.y, z: gh(f.x, f.y) + 80, c: 0xe6deff, i: 6000, d: 700 });
     }
     if (s.battle && s.battle.m.boss) {
       const m = s.battle.m;
