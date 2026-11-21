@@ -1069,6 +1069,74 @@ export function buildStone() {
   return g;
 }
 
+/* A RUNE STONE is a standing stone with the carving swapped for a ring of
+   marks - one, two or three of them - that is dark until he wakes it, and then
+   burns blue with a little light hanging over it. */
+export function buildRune(n) {
+  const g = buildStone();
+  const mark = g.children[1];
+  mark.material = new THREE.MeshBasicMaterial({ color: 0x5a6680, transparent: true, opacity: .55, map: runeTexture(n) });
+  const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(4, 0), glow(0x8fe0ff, 2.6));
+  orb.position.y = 96;
+  orb.visible = false;
+  g.add(orb);
+  g.userData = { mark, orb };
+  return g;
+}
+export function setRuneLit(g, on) {
+  const u = g.userData;
+  if (u.on === on) return;
+  u.on = on;
+  u.mark.material.color.set(on ? 0x9fe8ff : 0x5a6680);
+  if (on) u.mark.material.color.multiplyScalar(2.4);
+  u.mark.material.opacity = on ? 1 : .55;
+  u.orb.visible = on;
+}
+const runeTex = {};
+function runeTexture(n) {
+  if (runeTex[n]) return runeTex[n];
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 112;
+  const x = c.getContext('2d');
+  x.strokeStyle = '#fff'; x.lineWidth = 7; x.lineCap = 'round';
+  x.beginPath(); x.arc(32, 30, 18, 0, Math.PI * 2); x.stroke();
+  x.beginPath();
+  for (let i = 0; i < n; i++) {
+    const cx = 32 + (i - (n - 1) / 2) * 16;
+    x.moveTo(cx, 64); x.lineTo(cx, 98);
+  }
+  x.stroke();
+  return runeTex[n] = new THREE.CanvasTexture(c);
+}
+
+/* A BEACON: a stone bowl on a short stepped plinth at the foot of a landmark.
+   Unlit it is just stone. Lit, a crystal burns in the bowl and a pale column of
+   light goes up from it high enough to be seen from anywhere in the land. */
+export function buildBeacon() {
+  const g = new THREE.Group();
+  const stone = solid(0x666b77);
+  const steps = [[30, 34, 8, 4], [22, 26, 10, 13], [12, 14, 30, 33], [24, 13, 10, 53]];
+  for (const [rt, rb, h, y] of steps) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 9), stone);
+    m.position.y = y; m.castShadow = true; m.receiveShadow = true;
+    g.add(m);
+  }
+  const flame = new THREE.Mesh(new THREE.OctahedronGeometry(13), glow(0xf4f0ff, 3.0));
+  flame.position.y = 76; flame.scale.set(1, 1.6, 1);
+  flame.visible = false;
+  g.add(flame);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(9, 15, 900, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(0xe6deff).multiplyScalar(1.6), transparent: true,
+      opacity: .32, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false })
+  );
+  beam.position.y = 76 + 450;
+  beam.visible = false;
+  g.add(beam);
+  g.userData = { flame, beam };
+  return g;
+}
+
 let carveTex = null;
 function carvingTexture() {
   if (carveTex) return carveTex;

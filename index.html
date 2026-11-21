@@ -123,7 +123,7 @@ window.onerror=function(msg,src,line){
   <div id="card">
     <h1>🌙 Moonwood</h1>
     <p><b>The Lost Star</b></p>
-    <p>The Star Gate broke and nine Star Shards were scattered across three lands: the forest of <b>Moonwood</b>, the open <b>Sunfield</b>, and the old <b>Ruins</b>. Find all nine, and whatever broke the gate will be waiting for you there.</p>
+    <p>The Star Gate broke and nine Star Shards were scattered across three lands: the forest of <b>Moonwood</b>, the open <b>Sunfield</b>, and the old <b>Ruins</b>. But every shard has been sealed away - you will not even see one until you break its seal. Find all nine, light a beacon in every land, and whatever broke the gate will be waiting for you there.</p>
     <p>The view floats behind you and a little above, looking over your shoulder. <b>◀</b> and <b>▶</b> turn you around, <b>▲</b> walks you forward and <b>▼</b> steps back.</p>
     <p>Press <b>ACTION</b> near shards, creatures and people. Every creature you discover teaches you a move you can use in a fight — and each land's creatures know how to beat that land's monsters.</p>
     <button id="continue">▶ Continue</button>
@@ -237,16 +237,36 @@ const MONSTERS=[
  {id:'guardian',   land:null,      x:0,y:0,      name:'Gate Guardian',symbol:'👁️',weak:'light',hp:245,attack:6,xp:60,boss:true}
 ];
 
+/* Every shard is SEALED, and cannot be seen or picked up until its seal is
+   broken. There are three kinds of seal, one of each in every land:
+
+   monster - a monster is holding it. Beat that monster and the shard falls
+             where it stood (its x and y are moved onto the monster's below)
+   creature- it only shows itself to one creature, and always a creature from
+             ANOTHER land, so he has to go away and come back
+   runes   - three rune stones in the land have to be woken, in order. Waking
+             one out of order puts the others out again
+
+   The campfires and standing stones of each land say which is which. */
 const SHARDS=[
- {id:'m1',land:'moonwood',x:900,y:500,  name:'Dawn Shard'},
- {id:'m2',land:'moonwood',x:2600,y:600, name:'River Shard'},
- {id:'m3',land:'moonwood',x:1500,y:2350,name:'Hollow Shard'},
- {id:'s1',land:'sunfield',x:700,y:1900, name:'Meadow Shard'},
- {id:'s2',land:'sunfield',x:3400,y:1200,name:'Harvest Shard'},
- {id:'s3',land:'sunfield',x:2100,y:2450,name:'Wind Shard'},
- {id:'r1',land:'ruins',   x:2300,y:600, name:'Pillar Shard'},
- {id:'r2',land:'ruins',   x:800,y:1050, name:'Echo Shard'},
- {id:'r3',land:'ruins',   x:3200,y:2300,name:'Moon Shard'}
+ {id:'m1',land:'moonwood',x:900,y:500,  name:'Dawn Shard',  seal:{need:'creature',id:'sunmoth'},
+  sealed:'Something hums here, cold and asleep. It is waiting for light - real daylight, the kind the fields have.',
+  opened:'Far away in Moonwood, the Dawn Shard has woken to the Sunmoth\'s light.'},
+ {id:'m2',land:'moonwood',x:2600,y:600, name:'River Shard', seal:{need:'monster',id:'bogling'}},
+ {id:'m3',land:'moonwood',x:1500,y:2350,name:'Hollow Shard',seal:{need:'runes'},
+  sealed:'There is a shard in the roots of this hollow tree, but they are shut tight round it. The runes of the wood are still asleep.'},
+ {id:'s1',land:'sunfield',x:700,y:1900, name:'Meadow Shard',seal:{need:'runes'},
+  sealed:'The grass here is warm, as if something were buried under it. The field\'s runes are still asleep.'},
+ {id:'s2',land:'sunfield',x:3400,y:1200,name:'Harvest Shard',seal:{need:'monster',id:'scarecrow'}},
+ {id:'s3',land:'sunfield',x:2100,y:2450,name:'Wind Shard',  seal:{need:'creature',id:'stonepup'},
+  sealed:'Something hums deep under this hard ground - too deep to dig with your hands. Something made of stone might manage it.',
+  opened:'Far away in Sunfield, the Stonepup\'s digging has turned up the Wind Shard.'},
+ {id:'r1',land:'ruins',   x:2300,y:600, name:'Pillar Shard',seal:{need:'monster',id:'golem'}},
+ {id:'r2',land:'ruins',   x:800,y:1050, name:'Echo Shard',  seal:{need:'creature',id:'brookfin'},
+  sealed:'An old well, quite dry. Something hums at the very bottom of it, out of reach. If only it would fill.',
+  opened:'Far away in the Ruins, the Brookfin has filled the dry well, and the Echo Shard floats up out of it.'},
+ {id:'r3',land:'ruins',   x:3200,y:2300,name:'Moon Shard',  seal:{need:'runes'},
+  sealed:'Moonlight pools here round something you cannot quite see. The runes of the Ruins are still asleep.'}
 ];
 
 /* ---------------------------------------------------------------------------
@@ -263,29 +283,43 @@ const FINDS=[
  {id:'mw_seed1',land:'moonwood',type:'seed',x:600,y:2400},
  {id:'mw_seed2',land:'moonwood',type:'seed',x:3500,y:1800},
  {id:'mw_seed3',land:'moonwood',type:'seed',x:2000,y:300},
- {id:'mw_fire1',land:'moonwood',type:'fire',x:1600,y:1750,text:'You rest by the fire. Luna has scratched a map into the dirt: three shards, and a gate that hums when they are near.'},
- {id:'mw_fire2',land:'moonwood',type:'fire',x:3100,y:1500,text:'You rest by the fire. Something has been sleeping here - the ashes are still warm.'},
+ {id:'mw_fire1',land:'moonwood',type:'fire',x:1600,y:1750,text:'You rest by the fire. Luna has scratched a map into the dirt: a shard clutched by the Bogling, a shard asleep under the northern pines waiting for a light from the fields, and a hollow tree in the south.'},
+ {id:'mw_fire2',land:'moonwood',type:'fire',x:3100,y:1500,text:'You rest by the fire. Something has been sleeping here - the ashes are still warm. Scratched beside them: \'the beacon at the Great Pine will not burn while anything wicked walks the wood\'.'},
  {id:'mw_stone1',land:'moonwood',type:'stone',x:900,y:1900,text:'Thornback and Bramblebear fear running water. Whatever the Brookfin teaches you will hurt them most.'},
- {id:'mw_stone2',land:'moonwood',type:'stone',x:2700,y:2500,text:'The carving shows a shard held in the roots of a hollow tree, far to the south.'},
+ {id:'mw_stone2',land:'moonwood',type:'stone',x:2700,y:2500,text:'The carving shows a shard held in the roots of a hollow tree, far to the south, and three runes round the edge of the wood. Under them: one mark, then two, then three.'},
  {id:'mw_boots',land:'moonwood',type:'boots',x:3700,y:2500},
+ {id:'mw_rune2',land:'moonwood',type:'rune',n:2,x:700,y:700},
+ {id:'mw_rune1',land:'moonwood',type:'rune',n:1,x:3700,y:1100},
+ {id:'mw_rune3',land:'moonwood',type:'rune',n:3,x:2900,y:2650},
+ {id:'mw_beacon',land:'moonwood',type:'beacon',x:1800,y:1040},
  // Sunfield
  {id:'sf_seed1',land:'sunfield',type:'seed',x:500,y:600},
  {id:'sf_seed2',land:'sunfield',type:'seed',x:3600,y:2600},
  {id:'sf_seed3',land:'sunfield',type:'seed',x:2400,y:1150},
- {id:'sf_fire1',land:'sunfield',type:'fire',x:1700,y:1250,text:'You rest by the fire. Out here the wind carries a sound like a bell - the gate, somewhere east.'},
- {id:'sf_fire2',land:'sunfield',type:'fire',x:3000,y:1700,text:'You rest by the fire. Someone left a scarecrow watching this field. It has moved since you last looked.'},
+ {id:'sf_fire1',land:'sunfield',type:'fire',x:1700,y:1250,text:'You rest by the fire. Out here the wind carries a sound like a bell - the gate, somewhere east. Under the bell, a deeper hum from the hard ground in the south, as if something were buried too deep to reach.'},
+ {id:'sf_fire2',land:'sunfield',type:'fire',x:3000,y:1700,text:'You rest by the fire. Someone left a scarecrow watching this field. It has moved since you last looked - and there is something bright in its straw hand.'},
  {id:'sf_stone1',land:'sunfield',type:'stone',x:1100,y:2500,text:'Sparks scatter the things that blow through this field. The Larkspark knows the trick of it.'},
  {id:'sf_stone2',land:'sunfield',type:'stone',x:2600,y:400,text:'The Old Scarecrow and the Thistle Bull flinch from light. A moth of the field carries some.'},
  {id:'sf_boots',land:'sunfield',type:'boots',x:600,y:2650},
+ {id:'sf_stone3',land:'sunfield',type:'stone',x:900,y:1500,text:'Three runes stand at the corners of the field: one mark, two marks, three marks. Wake them in that order and the meadow will give back what it is hiding.'},
+ {id:'sf_rune3',land:'sunfield',type:'rune',n:3,x:1000,y:400},
+ {id:'sf_rune2',land:'sunfield',type:'rune',n:2,x:3700,y:600},
+ {id:'sf_rune1',land:'sunfield',type:'rune',n:1,x:2500,y:2650},
+ {id:'sf_beacon',land:'sunfield',type:'beacon',x:2300,y:1740},
  // The Ruins
  {id:'ru_seed1',land:'ruins',type:'seed',x:600,y:2400},
  {id:'ru_seed2',land:'ruins',type:'seed',x:2000,y:2650},
  {id:'ru_seed3',land:'ruins',type:'seed',x:3600,y:1050},
- {id:'ru_fire1',land:'ruins',type:'fire',x:1500,y:1500,text:'You rest by the fire. The pillars here were raised to hold the gate open. Something pulled them down.'},
- {id:'ru_fire2',land:'ruins',type:'fire',x:2900,y:1250,text:'You rest by the fire. Nine shards, the carvings say, and the thing that scattered them still sleeping.'},
+ {id:'ru_fire1',land:'ruins',type:'fire',x:1500,y:1500,text:'You rest by the fire. The pillars here were raised to hold the gate open. Something pulled them down - something big and grey, that still has one of the shards inside it.'},
+ {id:'ru_fire2',land:'ruins',type:'fire',x:2900,y:1250,text:'You rest by the fire. Nine shards, the carvings say, and the thing that scattered them still sleeping. It will not wake until a beacon burns in every land.'},
  {id:'ru_stone1',land:'ruins',type:'stone',x:2200,y:1800,text:'Moonlight undoes what these halls were made of. The Glimmercat still remembers how.'},
  {id:'ru_stone2',land:'ruins',type:'stone',x:900,y:600,text:'The Tomb Beetle and the Rubble Crab are stone themselves, and only stone breaks them.'},
- {id:'ru_boots',land:'ruins',type:'boots',x:3500,y:2550}
+ {id:'ru_boots',land:'ruins',type:'boots',x:3500,y:2550},
+ {id:'ru_stone3',land:'ruins',type:'stone',x:1900,y:2400,text:'A dry well in the west, the carving says, and only running water will lift what lies in it. And three runes: one mark, two, three - woken in order, or not at all.'},
+ {id:'ru_rune1',land:'ruins',type:'rune',n:1,x:300,y:2650},
+ {id:'ru_rune3',land:'ruins',type:'rune',n:3,x:1400,y:450},
+ {id:'ru_rune2',land:'ruins',type:'rune',n:2,x:3700,y:2050},
+ {id:'ru_beacon',land:'ruins',type:'beacon',x:2400,y:1540}
 ];
 
 const LANDS=[
@@ -453,6 +487,7 @@ function outOfTheRiver(){
  }
 }
 outOfTheRiver();
+for(const s of SHARDS)if(s.seal.need==='monster'){const m=MONSTERS.find(m=>m.id===s.seal.id);s.x=m.x;s.y=m.y}
 
 LANDS.forEach(buildLand);
 const npc={land:'moonwood',x:900,y:1450,r:19};   // Luna waits on the path near where he starts
@@ -608,7 +643,7 @@ function startGame(continuing){
  updateHUD();
  showBanner(land().emoji+' '+land().name);
  if(continuing)say('Welcome back','You have '+picked.size+' of 9 Star Shards. Your adventure continues!');
- else say('A new adventure','Luna is waiting on the path ahead. Find three Star Shards in each of the three lands, and bring all nine back to the Star Gate.');
+ else say('A new adventure','Luna is waiting on the path ahead. Find three Star Shards in each of the three lands, light a beacon in each, and bring all nine back to the Star Gate.');
 }
 
 const savedGame=readSave();
@@ -697,6 +732,23 @@ function updateCritters(dt){
 
 function shardsIn(id){return landById[id].shards.filter(s=>picked.has(s.id)).length}
 
+// The seals. A shard nobody has unsealed is not drawn, gives off no light, and
+// the compass does not know it is there.
+function runesIn(id){return FINDS.filter(f=>f.land===id&&f.type==='rune')}
+function runesLit(id){return runesIn(id).filter(f=>found.has(f.id)).length}
+function shardOpen(s){
+ const n=s.seal.need;
+ if(n==='monster')return defeated.has(s.seal.id);
+ if(n==='creature')return discovered.has(s.seal.id);
+ if(n==='runes')return runesLit(s.land)>=runesIn(s.land).length;
+ return true;
+}
+function beaconOf(id){return FINDS.find(f=>f.land===id&&f.type==='beacon')}
+function beaconLit(id){return found.has(beaconOf(id).id)}
+function beaconsLit(){return LANDS.filter(L=>beaconLit(L.id)).length}
+function guardianReady(){return picked.size>=9&&beaconsLit()>=LANDS.length&&!defeated.has('guardian')}
+function monstersLeft(id){return landById[id].monsters.filter(m=>!defeated.has(m.id))}
+
 function updateHUD(){
  document.getElementById('score').textContent=picked.size;
  document.getElementById('here').textContent=shardsIn(p.land);
@@ -705,12 +757,27 @@ function updateHUD(){
  document.getElementById('area').textContent=land().name;
  // The compass. The arrow glyph points RIGHT when it is not rotated, so a
  // quarter turn anticlockwise is what makes "up" mean "straight ahead".
- const L=land(), t=L.shards.find(sh=>!picked.has(sh.id))||L.gate;
+ // It only knows about shards that have been unsealed. Once the land's three
+ // are found it points at the beacon, and once that burns, at the gate.
+ const L=land(), bc=beaconOf(L.id);
+ let t=null,label='Star Shard';
+ let best=1e9;
+ for(const sh of L.shards){
+  if(picked.has(sh.id)||!shardOpen(sh))continue;
+  const d=Math.hypot(sh.x-p.x,sh.y-p.y);if(d<best){best=d;t=sh}
+ }
+ if(!t&&shardsIn(L.id)>=3&&!beaconLit(L.id)){t=bc;label='Beacon'}
+ else if(!t&&shardsIn(L.id)>=3){t=L.gate;label='Star Gate'}
+ const arrow=document.getElementById('carrow');
+ if(!t){
+  document.getElementById('ctarget').textContent='Shards sealed - search';
+  arrow.style.opacity='.25';arrow.style.transform='rotate('+(Date.now()/600)+'rad)';
+  return;
+ }
  const gone=Math.hypot(t.x-p.x,t.y-p.y);
- document.getElementById('ctarget').textContent=
-   (t===L.gate?'Star Gate':'Star Shard')+(gone<260?' - right here':gone<900?' - close':'');
- document.getElementById('carrow').style.transform=
-   'rotate('+(Math.atan2(t.y-p.y,t.x-p.x)-cam.yaw-Math.PI/2)+'rad)';
+ document.getElementById('ctarget').textContent=label+(gone<260?' - right here':gone<900?' - close':'');
+ arrow.style.opacity='1';
+ arrow.style.transform='rotate('+(Math.atan2(t.y-p.y,t.x-p.x)-cam.yaw-Math.PI/2)+'rad)';
 }
 
 /* ---------------------------------------------------------------------------
@@ -722,11 +789,14 @@ function baseAction(){
  if(!started||won||battle||menu)return;
  const L=land();
  for(const s of L.shards){
-   if(!picked.has(s.id)&&dist(p,s)<80){
+   if(!picked.has(s.id)&&dist(p,s)<80&&shardOpen(s)){
      picked.add(s.id);p.xp+=5;updateHUD();
      const here=shardsIn(L.id);
-     if(picked.size>=9)say('The ninth Star Shard','Every shard is yours. The Star Gate is waiting - walk into it and finish this.');
-     else if(here===3)say(s.name,'That is all three shards in '+L.name+'! Take them to the Star Gate and try another land.');
+     const bLeft=LANDS.filter(K=>!beaconLit(K.id)).map(K=>K.landmark.name);
+     if(picked.size>=9)say('The ninth Star Shard','Every shard is yours. '+(bLeft.length
+       ?'But the gate stays dark until a beacon burns in every land - still unlit: '+bLeft.join(', ')+'.'
+       :'The Star Gate is waiting - walk into it and finish this.'));
+     else if(here===3)say(s.name,'That is all three shards in '+L.name+'! Now light the beacon at '+L.landmark.name+' - it will not burn while any monster still walks this land.');
      else say(s.name,'Shard '+here+' of 3 in '+L.name+'. '+(9-picked.size)+' still hidden across the lands.');
      saveGame();
      return;
@@ -737,8 +807,10 @@ function baseAction(){
      const mv=MOVES[c.move];
      discovered.add(c.id);p.moves.push(c.move);p.xp+=4;p.power+=2;p.maxHp+=3;p.hp=p.maxHp;updateHUD();
      const prey=MONSTERS.filter(m=>m.weak===mv.kind&&m.land===L.id).map(m=>m.name);
+     const woke=SHARDS.find(s=>s.seal.need==='creature'&&s.seal.id===c.id&&!picked.has(s.id));
      say('Creature discovered: '+c.name, c.desc+' It teaches you '+mv.name+' ('+mv.kind+')'+
-       (prey.length?', which is strong against the '+prey.join(' and the ')+'.':'.'));
+       (prey.length?', which is strong against the '+prey.join(' and the ')+'.':'.')+
+       (woke?' '+woke.opened:''));
      saveGame();
      return;
    }
@@ -763,6 +835,8 @@ function baseAction(){
      return;
    }
    if(f.type==='stone'){say('A standing stone',f.text);return}
+   if(f.type==='rune'){touchRune(f);return}
+   if(f.type==='beacon'){touchBeacon(f);return}
  }
  for(const bsh of L.berries){
    if(dist(p,bsh)>75||eaten.has(bsh.id))continue;
@@ -772,19 +846,66 @@ function baseAction(){
    return;
  }
  if(p.land===npc.land&&dist(p,npc)<95){lunaSpeaks();return}
- if(dist(p,L.gate)<135)openTravel();
+ if(dist(p,L.gate)<135){openTravel();return}
+ // Standing on a shard that is still sealed: he cannot see it, but he can feel it.
+ for(const s of L.shards){
+   if(picked.has(s.id)||shardOpen(s)||dist(p,s)>130)continue;
+   say('Something hidden',s.sealed||'Something hums here, out of reach.');return;
+ }
+}
+
+const MARKS=['','one mark','two marks','three marks'];
+function touchRune(f){
+ const L=land(), all=runesIn(L.id), lit=runesLit(L.id);
+ if(found.has(f.id)){
+   say('A waking rune','It burns a steady blue. It bears '+MARKS[f.n]+'. ('+lit+' of '+all.length+' awake in '+L.name+')');return;
+ }
+ if(lit>=all.length)return;
+ if(f.n!==lit+1){
+   all.forEach(r=>found.delete(r.id));saveGame();
+   say('The rune will not wake','It bears '+MARKS[f.n]+'. It flickers under your hand and dies'+
+     (lit?', and the other runes of '+L.name+' go dark with it':'')+'. They must be woken in order.');
+   return;
+ }
+ found.add(f.id);saveGame();
+ if(lit+1>=all.length){
+   const s=L.shards.find(s=>s.seal.need==='runes');
+   say('The last rune wakes','It bears '+MARKS[f.n]+'. All three runes of '+L.name+' blaze together - and somewhere in the land, the '+s.name+' answers. Your compass has found it.');
+ }else say('A rune wakes','It bears '+MARKS[f.n]+'. It flares blue under your hand. ('+(lit+1)+' of '+all.length+' awake)');
+}
+
+function touchBeacon(f){
+ const L=land();
+ if(found.has(f.id)){
+   say('The beacon of '+L.name,'It burns white and tall. '+(beaconsLit()<LANDS.length
+     ?(LANDS.length-beaconsLit())+' still dark in the other lands.':'All three beacons are burning. The Star Gate is ready.'));return;
+ }
+ const need=3-shardsIn(L.id), foes=monstersLeft(L.id);
+ if(need||foes.length){
+   say('An unlit beacon','A cold stone bowl at the foot of '+L.landmark.name+'. It wants '+
+     (need?'the three shards of '+L.name+' (you have '+shardsIn(L.id)+')':'')+(need&&foes.length?', and ':'')+
+     (foes.length?'a quiet land - '+foes.length+' monster'+(foes.length>1?'s':'')+' still roam'+(foes.length>1?'':'s')+' '+L.name:'')+'.');
+   return;
+ }
+ found.add(f.id);p.xp+=10;saveGame();updateHUD();
+ say('The beacon of '+L.name+' is lit!','The three shards sing, and white light pours up from '+L.landmark.name+' into the sky. '+
+   (beaconsLit()<LANDS.length?(LANDS.length-beaconsLit())+' beacon'+(LANDS.length-beaconsLit()>1?'s':'')+' still dark.'
+     :(picked.size>=9?'Every beacon burns. The Star Gate is waiting.':'Every beacon burns - but the gate still wants all nine shards.')));
 }
 
 function lunaSpeaks(){
  if(picked.size===0)
-   say('Luna the Forest Keeper','The Star Gate broke and scattered nine shards across three lands. Three are here in Moonwood. Walk into the gate in the east and it will carry you to the others.');
+   say('Luna the Forest Keeper','The Star Gate broke and scattered nine shards across three lands, and sealed every one away. You will not see a shard until you break its seal - read the standing stones, and rest at the fires. Walk into the gate in the east and it will carry you to the other lands.');
+ else if(picked.size>=9&&beaconsLit()<LANDS.length)
+   say('Luna','All nine! But the gate will stay dark until a beacon burns in every land. Each beacon sits at the foot of its land\'s landmark, and none will light while monsters still walk there. Still dark: '+
+     LANDS.filter(L=>!beaconLit(L.id)).map(L=>L.landmark.name).join(', ')+'.');
  else if(picked.size>=9)
-   say('Luna','All nine! Something is stirring at the gate. '+(p.level<5
+   say('Luna','All nine, and every beacon burning! Something is stirring at the gate. '+(p.level<5
      ? 'You are not ready for it yet - find more creatures, and eat every star seed you can.'
      : 'Remember what the creatures taught you, and guard when it gathers itself.'));
  else{
    const left=LANDS.filter(L=>shardsIn(L.id)<3).map(L=>L.name+' ('+shardsIn(L.id)+'/3)');
-   say('Luna','You have '+picked.size+' of nine. Still to search: '+left.join(', ')+'. Find the creatures of a land and they will teach you how to beat its monsters.');
+   say('Luna','You have '+picked.size+' of nine. Still to search: '+left.join(', ')+'. The shards are sealed - some are held by monsters, some wait for a creature from another land, and some sleep until the runes wake. The campfires and the standing stones remember which.');
  }
 }
 
@@ -796,13 +917,13 @@ function openTravel(){
  LANDS.forEach(L=>{
   const b=document.createElement('button');
   b.className='land'+(L.id===p.land?' here':'');
-  b.innerHTML=L.emoji+' '+L.name+' <span>'+shardsIn(L.id)+'/3 ⭐</span>'+
+  b.innerHTML=L.emoji+' '+L.name+' <span>'+shardsIn(L.id)+'/3 ⭐'+(beaconLit(L.id)?' 🔥':'')+'</span>'+
     '<i style="display:block;font-style:normal;font-weight:400;font-size:12px;opacity:.8;margin-top:3px">'+
     (L.id===p.land?'You are here':L.blurb)+'</i>';
   b.addEventListener('click',()=>{closeTravel();if(L.id!==p.land)travelTo(L.id)});
   list.appendChild(b);
  });
- const ready=picked.size>=9&&!defeated.has('guardian');
+ const ready=guardianReady();
  if(ready){
   const b=document.createElement('button');
   b.className='land';b.style.background='rgba(150,60,80,.85)';
@@ -814,7 +935,8 @@ function openTravel(){
  }
  document.getElementById('travelnote').textContent= ready
    ? 'All nine shards are home, and something behind the gate has woken up.'
-   : 'The gate hangs between the three lands. '+(9-picked.size)+' shards are still out there.';
+   : picked.size>=9 ? 'All nine shards are home, but the gate is still dark. Light the beacons: '+beaconsLit()+' of 3 burning.'
+   : 'The gate hangs between the three lands. '+(9-picked.size)+' shards are still out there, and '+beaconsLit()+' of 3 beacons burn.';
  document.getElementById('travel').style.display='flex';
  menu=true;keys.up=keys.down=keys.left=keys.right=false;
 }
@@ -826,7 +948,7 @@ function travelTo(id){
  p.land=id;p.x=L.gate.x-200;p.y=L.gate.y;p.a=Math.PI;   // he steps out facing into the land
  eaten=new Set();                                       // the berries grow back while he is away
  snapCam();showBanner(L.emoji+' '+L.name);
- say('Through the gate',L.name+' - '+L.blurb+' '+(3-shardsIn(id))+' of its shards are still hidden.');
+ say('Through the gate',L.name+' - '+L.blurb+' '+(3-shardsIn(id))+' of its shards are still hidden'+(beaconLit(id)?'.':', and its beacon is dark.'));
  updateHUD();saveGame();
 }
 
@@ -955,9 +1077,20 @@ function victory(){
  }
  if(p.xp>=p.level*20){
    p.xp-=p.level*20;p.level++;p.maxHp+=4;p.hp=p.maxHp;
-   say('Level up!','You beat the '+m.name+' and reached level '+p.level+'. Stronger, and healthier too.');
- }else say('Victory!','You beat the '+m.name+' and earned '+m.xp+' XP.');
+   say('Level up!','You beat the '+m.name+' and reached level '+p.level+'. Stronger, and healthier too.'+afterFight(m));
+ }else say('Victory!','You beat the '+m.name+' and earned '+m.xp+' XP.'+afterFight(m));
  updateHUD();saveGame();
+}
+
+// What beating a monster has changed: a shard it was holding, or a land gone quiet.
+function afterFight(m){
+ let t='';
+ const drop=SHARDS.find(s=>s.seal.need==='monster'&&s.seal.id===m.id&&!picked.has(s.id));
+ if(drop)t+=' As it fades, the '+drop.name+' drops to the ground where it stood!';
+ const L=land();
+ if(!monstersLeft(L.id).length&&!beaconLit(L.id))
+   t+=' That was the last monster in '+L.name+' - the beacon at '+L.landmark.name+' can be lit'+(shardsIn(L.id)<3?' once you have all three of its shards.':' now.');
+ return t;
 }
 
 function faint(){
@@ -1073,7 +1206,8 @@ function drawOverlay(){
 // Handed to the renderer once a frame. The sets are read fresh every time
 // because starting a new game throws the old ones away and makes new ones.
 const frame={L:null,p:p,cam:cam,npc:npc,battle:null,now:0,dt:1,
-             picked:picked,found:found,eaten:eaten,discovered:discovered,defeated:defeated};
+             picked:picked,found:found,eaten:eaten,discovered:discovered,defeated:defeated,
+             shardOpen:shardOpen,beaconsLit:beaconsLit};
 function draw(dt){
  frame.L=land();frame.battle=battle;frame.now=Date.now();frame.dt=dt;
  frame.picked=picked;frame.found=found;frame.eaten=eaten;
@@ -1122,6 +1256,8 @@ function watchSpeed(now){
 // A handle on the innards, so the game can be poked at from the browser's
 // console when something needs looking at.
 window.MW={get p(){return p},get R(){return R},get land(){return land()},get battle(){return battle},
+           get picked(){return picked},get found(){return found},get defeated(){return defeated},
+           get discovered(){return discovered},action:baseAction,travelTo:travelTo,
            cam:cam,snapCam:snapCam};
 
 let lastMs=0;
